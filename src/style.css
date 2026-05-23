@@ -154,6 +154,13 @@ body {
 }
 .greeting em { color: var(--accent); font-style: italic; }
 
+/* Header actions (sync + theme toggle) */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 /* Theme toggle */
 .theme-toggle {
   position: relative;
@@ -177,6 +184,45 @@ body {
 .icon-moon { opacity: 0; transform: scale(0.5) rotate(-90deg); }
 [data-theme="light"] .icon-sun { opacity: 0; transform: scale(0.5) rotate(90deg); }
 [data-theme="light"] .icon-moon { opacity: 1; transform: scale(1) rotate(0); }
+
+/* Sync button (mirrors theme-toggle shape, with a state pip) */
+.sync-btn {
+  position: relative;
+  width: 44px; height: 44px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 50%;
+  cursor: pointer;
+  color: var(--text-muted);
+  display: grid; place-items: center;
+  transition: all var(--t-base) var(--ease);
+}
+.sync-btn:hover {
+  background: var(--surface-2);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.sync-btn svg { width: 18px; height: 18px; }
+
+.sync-pip {
+  position: absolute;
+  top: 8px; right: 8px;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  border: 2px solid var(--surface);
+  box-sizing: content-box;
+  transition: background var(--t-base) var(--ease);
+}
+.sync-pip[data-state="local"]   { background: var(--text-faint); }
+.sync-pip[data-state="syncing"] { background: var(--accent); animation: syncPulse 1s ease-in-out infinite; }
+.sync-pip[data-state="synced"]  { background: var(--success); }
+.sync-pip[data-state="error"]   { background: var(--danger); }
+
+@keyframes syncPulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.4; }
+}
 
 /* ---------- Main grid ---------- */
 .main {
@@ -594,6 +640,24 @@ body {
   gap: 8px;
   margin-top: 4px;
 }
+
+.field-help {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-top: -4px;
+}
+.field-help a { color: var(--accent); text-decoration: none; border-bottom: 1px dotted var(--accent-soft); }
+.field-help a:hover { border-bottom-color: var(--accent); }
+
+.sync-status {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  min-height: 1.2em;
+}
+.sync-status[data-kind="error"] { color: var(--danger); }
 
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes dialogIn {

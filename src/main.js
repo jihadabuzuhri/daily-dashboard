@@ -1,10 +1,14 @@
 import './style.css';
 
 // --- Storage ---
-// Primary: Vite dev middleware (GET/PUT /api/store -> data/store.json).
-// Fallback: localStorage, so the static build (e.g. GitHub Pages) still persists per-browser.
+// Three tiers, in resolution order at startup:
+//   1. /api/store  — Vite dev middleware (data/store.json). Local development.
+//   2. GitHub gist — cross-device sync, configured per-browser via the sync dialog.
+//   3. localStorage — last-resort per-browser cache (also the write-through cache for the gist tier).
 const STORE_URL = '/api/store';
 const LOCAL_KEY = 'daily-dashboard:store';
+const GIST_CONFIG_KEY = 'daily-dashboard:gist';
+const GIST_FILENAME = 'daily-dashboard.json';
 
 function readLocal() {
   try {
@@ -16,29 +20,100 @@ function writeLocal(state) {
   try { localStorage.setItem(LOCAL_KEY, JSON.stringify(state)); } catch { /* quota / SecurityError */ }
 }
 
+function readGistConfig() {
+  try {
+    const raw = localStorage.getItem(GIST_CONFIG_KEY);
+    const cfg = raw ? JSON.parse(raw) : null;
+    return cfg && cfg.id && cfg.token ? cfg : null;
+  } catch { return null; }
+}
+function writeGistConfig(cfg) {
+  try { localStorage.setItem(GIST_CONFIG_KEY, JSON.stringify(cfg)); } catch {}
+}
+function clearGistConfig() {
+  try { localStorage.removeItem(GIST_CONFIG_KEY); } catch {}
+}
+
+async function gistFetch(cfg) {
+  const res = await fetch(`https://api.github.com/gists/${cfg.id}`, {
+    headers: { Authorization: `Bearer ${cfg.token}`, Accept: 'application/vnd.github+json' },
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const body = await res.json();
+  const file = body.files?.[GIST_FILENAME];
+  if (!file) return {}; // gist exists but file not present yet — treat as empty
+  // For large files the inline content is truncated; fetch raw_url instead.
+  if (file.truncated && file.raw_url) {
+    const raw = await fetch(file.raw_url).then((r) => r.text());
+    return raw ? JSON.parse(raw) : {};
+  }
+  return file.content ? JSON.parse(file.content) : {};
+}
+
+async function gistWrite(cfg, state) {
+  const res = await fetch(`https://api.github.com/gists/${cfg.id}`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${cfg.token}`,
+      Accept: 'application/vnd.github+json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ files: { [GIST_FILENAME]: { content: JSON.stringify(state, null, 2) } } }),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+}
+
+function applyData(state, data) {
+  // Mutate arrays in place so module-level references stay valid.
+  state.todos.splice(0, state.todos.length, ...(data.todos || []));
+  state.archivedTodos.splice(0, state.archivedTodos.length, ...(data.archivedTodos || []));
+  state.links.splice(0, state.links.length, ...(data.links || []));
+  state.theme = data.theme === 'light' ? 'light' : 'dark';
+}
+
+function isEmpty(data) {
+  return !data || ((data.todos?.length || 0) + (data.archivedTodos?.length || 0) + (data.links?.length || 0) === 0);
+}
+
 const store = {
   state: { todos: [], archivedTodos: [], links: [], theme: 'dark' },
   _saveTimer: null,
+  mode: 'local',          // 'file' | 'gist' | 'local'
+  syncStatus: 'idle',     // 'idle' | 'syncing' | 'synced' | 'error'
 
   async load() {
-    let data;
+    // 1) Dev file API
     try {
       const res = await fetch(STORE_URL);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      data = await res.json();
-    } catch (err) {
-      data = readLocal();
-      if (data) console.info('[store] using localStorage (no dev server)');
-      else { console.warn('[store] load failed; running in-memory only', err); return; }
+      applyData(this.state, await res.json());
+      this.mode = 'file';
+      return;
+    } catch { /* fall through */ }
+
+    // 2) Gist if configured
+    const cfg = readGistConfig();
+    if (cfg) {
+      this._setSync('syncing');
+      try {
+        applyData(this.state, await gistFetch(cfg));
+        this.mode = 'gist';
+        this._setSync('synced');
+        return;
+      } catch (err) {
+        console.warn('[store] gist load failed; falling back to localStorage', err);
+        this._setSync('error', err);
+      }
     }
-    // Mutate arrays in place so module-level references stay valid.
-    this.state.todos.splice(0, this.state.todos.length, ...(data.todos || []));
-    this.state.archivedTodos.splice(0, this.state.archivedTodos.length, ...(data.archivedTodos || []));
-    this.state.links.splice(0, this.state.links.length, ...(data.links || []));
-    this.state.theme = data.theme === 'light' ? 'light' : 'dark';
+
+    // 3) localStorage
+    const local = readLocal();
+    if (local) applyData(this.state, local);
+    this.mode = 'local';
+    if (!cfg) this._setSync('local');
   },
 
-  /** Debounced async write. Multiple rapid saves coalesce into one PUT. */
+  /** Debounced async write. Multiple rapid saves coalesce into one network call. */
   save() {
     clearTimeout(this._saveTimer);
     this._saveTimer = setTimeout(() => this._flush(), 200);
@@ -46,15 +121,39 @@ const store = {
 
   async _flush() {
     this._saveTimer = null;
-    try {
-      const res = await fetch(STORE_URL, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(this.state),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    } catch {
-      writeLocal(this.state);
+    // localStorage is always a synchronous write-through cache.
+    writeLocal(this.state);
+
+    if (this.mode === 'file') {
+      try {
+        const res = await fetch(STORE_URL, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(this.state),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      } catch { /* localStorage already has it */ }
+      return;
+    }
+    if (this.mode === 'gist') {
+      const cfg = readGistConfig();
+      if (!cfg) { this.mode = 'local'; this._setSync('local'); return; }
+      this._setSync('syncing');
+      try {
+        await gistWrite(cfg, this.state);
+        this._setSync('synced');
+      } catch (err) {
+        this._setSync('error', err);
+      }
+    }
+    // 'local' mode: localStorage write above is sufficient.
+  },
+
+  _setSync(status, err) {
+    this.syncStatus = status;
+    updateSyncPip(status);
+    if (err && /\b401\b/.test(String(err.message))) {
+      showToast('Cloud sync: auth failed — re-enter your token', { label: 'Open', fn: openSyncDialog });
     }
   },
 };
@@ -99,6 +198,17 @@ const editCancel    = $('#edit-cancel');
 const editClose     = $('#edit-dialog-close');
 const editDialogTitle = $('#edit-dialog-title');
 const editSaveBtn   = $('#edit-save');
+
+const syncBtn       = $('#sync-btn');
+const syncPip       = $('#sync-pip');
+const syncDialog    = $('#sync-dialog');
+const syncForm      = $('#sync-form');
+const syncGistId    = $('#sync-gist-id');
+const syncToken     = $('#sync-token');
+const syncStatus    = $('#sync-status');
+const syncClose     = $('#sync-dialog-close');
+const syncClearBtn  = $('#sync-clear');
+const syncRefreshBtn = $('#sync-refresh');
 
 const toast         = $('#toast');
 
@@ -512,6 +622,130 @@ linkSearchClear.addEventListener('click', () => {
   linkSearch.value = '';
   applySearch('');
   linkSearch.focus();
+});
+
+// =====================================================
+// SYNC DIALOG (cloud sync via GitHub gist)
+// =====================================================
+const SYNC_PIP_TITLE = {
+  local:   'Local only — click to enable cloud sync',
+  syncing: 'Syncing…',
+  synced:  'Synced',
+  error:   'Sync error — click to review',
+};
+
+function updateSyncPip(state) {
+  if (!syncPip) return;
+  syncPip.dataset.state = state === 'idle' ? 'local' : state;
+  syncBtn.title = SYNC_PIP_TITLE[syncPip.dataset.state] || 'Cloud sync';
+}
+
+function setSyncStatusText(msg, kind = '') {
+  syncStatus.textContent = msg || '';
+  syncStatus.dataset.kind = kind;
+}
+
+function openSyncDialog() {
+  const cfg = readGistConfig();
+  syncGistId.value = cfg?.id || '';
+  syncToken.value = cfg?.token || '';
+  syncClearBtn.disabled = !cfg;
+  syncRefreshBtn.disabled = !cfg;
+  if (cfg) {
+    setSyncStatusText(
+      store.syncStatus === 'error' ? 'Last sync failed. Check your token.' :
+      store.syncStatus === 'synced' ? 'Connected.' :
+      store.syncStatus === 'syncing' ? 'Syncing…' : 'Connected.'
+    );
+  } else {
+    setSyncStatusText('Not configured. Paste a gist ID and PAT to enable sync.');
+  }
+  if (typeof syncDialog.showModal === 'function') syncDialog.showModal();
+  else syncDialog.setAttribute('open', '');
+  requestAnimationFrame(() => (cfg ? syncToken : syncGistId).focus());
+}
+function closeSyncDialog() {
+  if (syncDialog.open) syncDialog.close();
+}
+
+syncBtn.addEventListener('click', openSyncDialog);
+syncClose.addEventListener('click', closeSyncDialog);
+syncDialog.addEventListener('click', (e) => { if (e.target === syncDialog) closeSyncDialog(); });
+
+syncForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const id = syncGistId.value.trim();
+  const token = syncToken.value.trim();
+  if (!id || !token) { setSyncStatusText('Both fields required.', 'error'); return; }
+
+  const cfg = { id, token };
+  setSyncStatusText('Verifying…');
+  let remote;
+  try {
+    remote = await gistFetch(cfg);
+  } catch (err) {
+    setSyncStatusText(`Error: ${err.message}`, 'error');
+    return;
+  }
+
+  writeGistConfig(cfg);
+  store.mode = 'gist';
+
+  // First-sync migration: if the gist is empty but we have local data, push local up.
+  // Otherwise the gist is authoritative — replace local state with remote.
+  const localHasData = !isEmpty(store.state);
+  if (isEmpty(remote) && localHasData) {
+    store._setSync('syncing');
+    try {
+      await gistWrite(cfg, store.state);
+      store._setSync('synced');
+      closeSyncDialog();
+      showToast('Cloud sync enabled — local data uploaded');
+    } catch (err) {
+      store._setSync('error', err);
+      setSyncStatusText(`Error: ${err.message}`, 'error');
+    }
+    return;
+  }
+
+  applyData(store.state, remote);
+  document.documentElement.setAttribute('data-theme', store.state.theme);
+  renderTodos();
+  renderLinks();
+  store._setSync('synced');
+  closeSyncDialog();
+  showToast('Cloud sync enabled');
+});
+
+syncClearBtn.addEventListener('click', () => {
+  clearGistConfig();
+  store.mode = 'local';
+  store._setSync('local');
+  syncGistId.value = '';
+  syncToken.value = '';
+  syncClearBtn.disabled = true;
+  syncRefreshBtn.disabled = true;
+  setSyncStatusText('Sync disabled. Local data kept.');
+  showToast('Cloud sync disabled');
+});
+
+syncRefreshBtn.addEventListener('click', async () => {
+  const cfg = readGistConfig();
+  if (!cfg) return;
+  setSyncStatusText('Refreshing…');
+  store._setSync('syncing');
+  try {
+    const remote = await gistFetch(cfg);
+    applyData(store.state, remote);
+    document.documentElement.setAttribute('data-theme', store.state.theme);
+    renderTodos();
+    renderLinks();
+    store._setSync('synced');
+    setSyncStatusText('Pulled latest from gist.');
+  } catch (err) {
+    store._setSync('error', err);
+    setSyncStatusText(`Error: ${err.message}`, 'error');
+  }
 });
 
 // --- Keyboard shortcuts ---

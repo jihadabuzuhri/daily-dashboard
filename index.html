@@ -20,10 +20,16 @@
         <p class="date" id="date"></p>
         <h1 class="greeting" id="greeting"></h1>
       </div>
-      <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
-        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
-        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-      </button>
+      <div class="header-actions">
+        <button class="sync-btn" id="sync-btn" aria-label="Cloud sync settings" title="Cloud sync">
+          <span class="sync-pip" id="sync-pip" data-state="local" aria-hidden="true"></span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.5 19a4.5 4.5 0 0 0 0-9c-.2-.1-.4-.1-.6-.2A6 6 0 0 0 5 11c0 .2 0 .4.1.6A4 4 0 0 0 6 19"/></svg>
+        </button>
+        <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+          <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+          <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        </button>
+      </div>
     </header>
 
     <main class="main">
@@ -104,6 +110,33 @@
     </footer>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <dialog class="edit-dialog" id="sync-dialog" aria-labelledby="sync-dialog-title">
+      <form method="dialog" class="edit-form" id="sync-form">
+        <header class="edit-header">
+          <h3 id="sync-dialog-title">Cloud sync</h3>
+          <button type="button" class="dialog-close" id="sync-dialog-close" aria-label="Close">&times;</button>
+        </header>
+        <p class="field-help">
+          Sync tasks and bookmarks across devices via a private GitHub gist.
+          See the README for one-time setup.
+        </p>
+        <label class="field">
+          <span class="field-label">Gist ID</span>
+          <input type="text" id="sync-gist-id" autocomplete="off" spellcheck="false" placeholder="a1b2c3d4e5f6..." />
+        </label>
+        <label class="field">
+          <span class="field-label">Personal access token</span>
+          <input type="password" id="sync-token" autocomplete="off" spellcheck="false" placeholder="github_pat_..." />
+        </label>
+        <p class="sync-status" id="sync-status"></p>
+        <footer class="edit-footer">
+          <button type="button" class="btn-ghost" id="sync-clear">Disable</button>
+          <button type="button" class="btn-ghost" id="sync-refresh">Refresh</button>
+          <button type="submit" class="btn-primary" id="sync-save">Save</button>
+        </footer>
+      </form>
+    </dialog>
 
     <dialog class="edit-dialog" id="edit-dialog" aria-labelledby="edit-dialog-title">
       <form method="dialog" class="edit-form" id="edit-form">
