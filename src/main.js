@@ -1,25 +1,41 @@
 import './style.css';
 
-// --- Storage (file-backed via Vite dev middleware: /api/store -> data/store.json) ---
+// --- Storage ---
+// Primary: Vite dev middleware (GET/PUT /api/store -> data/store.json).
+// Fallback: localStorage, so the static build (e.g. GitHub Pages) still persists per-browser.
 const STORE_URL = '/api/store';
+const LOCAL_KEY = 'daily-dashboard:store';
+
+function readLocal() {
+  try {
+    const raw = localStorage.getItem(LOCAL_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+function writeLocal(state) {
+  try { localStorage.setItem(LOCAL_KEY, JSON.stringify(state)); } catch { /* quota / SecurityError */ }
+}
 
 const store = {
   state: { todos: [], archivedTodos: [], links: [], theme: 'dark' },
   _saveTimer: null,
 
   async load() {
+    let data;
     try {
       const res = await fetch(STORE_URL);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      // Mutate arrays in place so module-level references stay valid.
-      this.state.todos.splice(0, this.state.todos.length, ...(data.todos || []));
-      this.state.archivedTodos.splice(0, this.state.archivedTodos.length, ...(data.archivedTodos || []));
-      this.state.links.splice(0, this.state.links.length, ...(data.links || []));
-      this.state.theme = data.theme === 'light' ? 'light' : 'dark';
+      data = await res.json();
     } catch (err) {
-      console.warn('[store] load failed; running in-memory only', err);
+      data = readLocal();
+      if (data) console.info('[store] using localStorage (no dev server)');
+      else { console.warn('[store] load failed; running in-memory only', err); return; }
     }
+    // Mutate arrays in place so module-level references stay valid.
+    this.state.todos.splice(0, this.state.todos.length, ...(data.todos || []));
+    this.state.archivedTodos.splice(0, this.state.archivedTodos.length, ...(data.archivedTodos || []));
+    this.state.links.splice(0, this.state.links.length, ...(data.links || []));
+    this.state.theme = data.theme === 'light' ? 'light' : 'dark';
   },
 
   /** Debounced async write. Multiple rapid saves coalesce into one PUT. */
@@ -37,8 +53,8 @@ const store = {
         body: JSON.stringify(this.state),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    } catch (err) {
-      console.warn('[store] save failed; changes only in memory', err);
+    } catch {
+      writeLocal(this.state);
     }
   },
 };
@@ -647,10 +663,13 @@ init();
 // Keep greeting fresh when the tab regains focus across hour boundaries
 document.addEventListener('visibilitychange', () => { if (!document.hidden) updateHeader(); });
 
-// Best-effort flush of any pending debounced save before the tab closes
+// Best-effort flush of any pending debounced save before the tab closes.
+// Write localStorage synchronously (works on static hosts) and also fire a keepalive
+// PUT so the dev server picks it up when available.
 window.addEventListener('beforeunload', () => {
   if (store._saveTimer) {
     clearTimeout(store._saveTimer);
+    writeLocal(store.state);
     try {
       fetch(STORE_URL, {
         method: 'PUT',

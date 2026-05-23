@@ -84,5 +84,7 @@ function fileStorePlugin() {
 }
 
 export default defineConfig({
+  // Relative base so the build works at any subpath (e.g. GitHub Pages at /<repo>/).
+  base: './',
   plugins: [fileStorePlugin()],
 });
