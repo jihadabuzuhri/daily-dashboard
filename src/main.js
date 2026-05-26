@@ -226,6 +226,10 @@ const syncRefreshBtn = $('#sync-refresh');
 
 const toast         = $('#toast');
 
+const installBtn       = $('#install-btn');
+const installDialog    = $('#install-dialog');
+const installDialogClose = $('#install-dialog-close');
+
 // --- Date + greeting ---
 function updateHeader() {
   const now = new Date();
@@ -837,6 +841,96 @@ syncRefreshBtn.addEventListener('click', async () => {
     setSyncStatusText(`Error: ${err.message}`, 'error');
   }
 });
+
+// =====================================================
+// PWA INSTALL
+//   - Chrome/Edge/Android: catch `beforeinstallprompt`, show our button,
+//     call .prompt() on click, hide once installed.
+//   - iOS Safari: no install event exists; detect the platform and show
+//     the same button but route it to an instructions dialog. A dismiss
+//     persists in localStorage so the user isn't nagged.
+//   - Already installed (display-mode: standalone): hide entirely.
+// =====================================================
+const IOS_DISMISS_KEY = 'daily-dashboard:install-dismissed';
+
+let deferredInstallPrompt = null;
+
+function isStandalone() {
+  return window.matchMedia('(display-mode: standalone)').matches
+      || window.navigator.standalone === true; // iOS Safari quirk
+}
+
+function isIosSafari() {
+  const ua = window.navigator.userAgent;
+  const ios = /iPad|iPhone|iPod/.test(ua) || (ua.includes('Mac') && 'ontouchend' in document);
+  // Safari (not Chrome/Firefox/Edge on iOS, which all wrap WebKit but expose their own UA tokens).
+  const safari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS/.test(ua);
+  return ios && safari;
+}
+
+function updateInstallButton() {
+  if (!installBtn) return;
+  if (isStandalone()) { installBtn.hidden = true; return; }
+  if (deferredInstallPrompt) { installBtn.hidden = false; return; }
+  if (isIosSafari() && localStorage.getItem(IOS_DISMISS_KEY) !== '1') {
+    installBtn.hidden = false;
+    return;
+  }
+  installBtn.hidden = true;
+}
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  // Stash the event; we'll trigger it from our button instead of the browser's
+  // default mini-infobar (which doesn't fire on all platforms anyway).
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  updateInstallButton();
+});
+
+window.addEventListener('appinstalled', () => {
+  deferredInstallPrompt = null;
+  updateInstallButton();
+  showToast('Installed — find Daily on your home screen');
+});
+
+if (installBtn) {
+  installBtn.addEventListener('click', async () => {
+    if (deferredInstallPrompt) {
+      // Android / desktop Chrome path: trigger native prompt.
+      deferredInstallPrompt.prompt();
+      try { await deferredInstallPrompt.userChoice; } catch {}
+      deferredInstallPrompt = null;
+      updateInstallButton();
+      return;
+    }
+    if (isIosSafari()) {
+      // iOS path: show how-to dialog.
+      if (typeof installDialog.showModal === 'function') installDialog.showModal();
+      else installDialog.setAttribute('open', '');
+    }
+  });
+}
+if (installDialogClose) {
+  installDialogClose.addEventListener('click', () => {
+    if (installDialog.open) installDialog.close();
+  });
+}
+if (installDialog) {
+  installDialog.addEventListener('click', (e) => {
+    if (e.target === installDialog) installDialog.close();
+  });
+  // "Got it" submits the form (method=dialog) → mark dismissed so we don't
+  // nag the same user on every visit.
+  installDialog.addEventListener('close', () => {
+    if (isIosSafari()) {
+      localStorage.setItem(IOS_DISMISS_KEY, '1');
+      updateInstallButton();
+    }
+  });
+}
+
+// First paint after init runs.
+updateInstallButton();
 
 // --- Keyboard shortcuts ---
 document.addEventListener('keydown', (e) => {
