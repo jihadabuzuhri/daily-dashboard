@@ -989,8 +989,46 @@ async function init() {
   renderTodos();
   renderQuickLinks();
   renderSavedLinks();
+  guardPlaceholders();
 }
 init();
+
+/**
+ * Browser extensions (password managers, form autofillers, translators) sometimes
+ * mis-identify our top-level inputs when a <dialog> opens and write garbage into
+ * them — most commonly the literal string "null", which leaves the user with
+ * useless placeholders and a stuck search filter. Pin the original placeholders
+ * and scrub any "null"/"undefined" values that get injected.
+ */
+function guardPlaceholders() {
+  const inputs = [todoInput, quickSearch].filter(Boolean);
+  const original = new Map(inputs.map((el) => [el, el.getAttribute('placeholder') || '']));
+
+  const isJunk = (v) => v === 'null' || v === 'undefined';
+
+  const sanitize = (el) => {
+    const want = original.get(el);
+    if (el.getAttribute('placeholder') !== want) el.setAttribute('placeholder', want);
+    if (isJunk(el.value)) {
+      el.value = '';
+      // Re-run downstream effects so dependent UI (clear-X, filter) updates.
+      if (el === quickSearch) applyQuickSearch('');
+    }
+  };
+
+  inputs.forEach(sanitize);
+
+  // Watch for attribute changes — covers extensions that overwrite placeholder.
+  const obs = new MutationObserver(() => inputs.forEach(sanitize));
+  inputs.forEach((el) => obs.observe(el, { attributes: true, attributeFilter: ['placeholder', 'value'] }));
+
+  // Also scrub right after dialogs open/close, which is when extensions
+  // typically scan the DOM.
+  [editDialog, syncDialog].filter(Boolean).forEach((dlg) => {
+    dlg.addEventListener('close', () => inputs.forEach(sanitize));
+    dlg.addEventListener('toggle', () => inputs.forEach(sanitize));
+  });
+}
 
 // Keep greeting fresh when the tab regains focus across hour boundaries
 document.addEventListener('visibilitychange', () => { if (!document.hidden) updateHeader(); });
