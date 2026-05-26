@@ -67,33 +67,42 @@
         </details>
       </section>
 
-      <section class="panel links-panel">
+      <section class="panel links-panel quick-panel">
         <div class="panel-head">
           <div class="panel-title">
-            <h2>Bookmarks</h2>
-            <span class="panel-meta" id="links-meta"></span>
+            <h2>Quick Links</h2>
+            <span class="panel-meta" id="quick-meta"></span>
           </div>
           <div class="link-toolbar">
             <div class="link-search">
               <svg class="link-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-              <input type="search" id="link-search" placeholder="Search bookmarks" autocomplete="off" />
-              <button type="button" class="link-search-clear" id="link-search-clear" aria-label="Clear search" hidden>
+              <input type="search" id="quick-search" placeholder="Search quick links" autocomplete="off" />
+              <button type="button" class="link-search-clear" id="quick-search-clear" aria-label="Clear search" hidden>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
               </button>
             </div>
-            <button type="button" class="btn-add-link" id="add-link-btn" aria-label="Add bookmark">
+            <button type="button" class="btn-add-link" id="quick-add-btn" aria-label="Add quick link">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
               <span>Add</span>
             </button>
           </div>
         </div>
 
-        <div class="link-grid" id="link-grid"></div>
-        <p class="empty-state" id="link-empty">
+        <div class="link-grid" id="quick-grid"></div>
+        <p class="empty-state" id="quick-empty">
           <span class="empty-icon">·</span>
-          <span class="empty-title">No bookmarks yet</span>
+          <span class="empty-title">No quick links yet</span>
           <span class="empty-hint">Press <kbd>L</kbd> to add one</span>
         </p>
+
+        <details class="link-archive" id="saved-archive" hidden>
+          <summary class="archive-summary">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="archive-caret"><polyline points="9 6 15 12 9 18"/></svg>
+            <span class="archive-label">Saved for Later</span>
+            <span class="archive-count" id="saved-count">0</span>
+          </summary>
+          <div class="link-grid link-grid-saved" id="saved-grid"></div>
+        </details>
       </section>
     </main>
 
@@ -101,7 +110,7 @@
       <div class="footer-keys">
         <span><kbd>N</kbd> task</span>
         <span class="dot"></span>
-        <span><kbd>L</kbd> bookmark</span>
+        <span><kbd>L</kbd> quick link</span>
         <span class="dot"></span>
         <span><kbd>/</kbd> search</span>
         <span class="dot"></span>

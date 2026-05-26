@@ -67,16 +67,24 @@ function applyData(state, data) {
   // Mutate arrays in place so module-level references stay valid.
   state.todos.splice(0, state.todos.length, ...(data.todos || []));
   state.archivedTodos.splice(0, state.archivedTodos.length, ...(data.archivedTodos || []));
-  state.links.splice(0, state.links.length, ...(data.links || []));
+  // Legacy migration: a single `links` array folds into quickLinks if quickLinks is absent.
+  const quick = data.quickLinks ?? data.links ?? [];
+  state.quickLinks.splice(0, state.quickLinks.length, ...quick);
+  state.savedLinks.splice(0, state.savedLinks.length, ...(data.savedLinks || []));
   state.theme = data.theme === 'light' ? 'light' : 'dark';
 }
 
 function isEmpty(data) {
-  return !data || ((data.todos?.length || 0) + (data.archivedTodos?.length || 0) + (data.links?.length || 0) === 0);
+  if (!data) return true;
+  return (data.todos?.length || 0)
+       + (data.archivedTodos?.length || 0)
+       + (data.quickLinks?.length || 0)
+       + (data.savedLinks?.length || 0)
+       + (data.links?.length || 0) === 0;
 }
 
 const store = {
-  state: { todos: [], archivedTodos: [], links: [], theme: 'dark' },
+  state: { todos: [], archivedTodos: [], quickLinks: [], savedLinks: [], theme: 'dark' },
   _saveTimer: null,
   mode: 'local',          // 'file' | 'gist' | 'local'
   syncStatus: 'idle',     // 'idle' | 'syncing' | 'synced' | 'error'
@@ -161,9 +169,11 @@ const store = {
 // --- State (references to store.state arrays — mutated in place) ---
 let todos = store.state.todos;
 let archivedTodos = store.state.archivedTodos;
-let links = store.state.links;
-let linkQuery = '';
+let quickLinks = store.state.quickLinks;
+let savedLinks = store.state.savedLinks;
+let quickQuery = '';
 let editingLinkId = null;
+let editingLinkKind = 'quick'; // 'quick' | 'saved' — which list the dialog is editing
 
 // --- DOM ---
 const $ = (s) => document.querySelector(s);
@@ -183,12 +193,16 @@ const archiveEl     = $('#archive');
 const archiveList   = $('#archive-list');
 const archiveCount  = $('#archive-count');
 
-const linkGrid      = $('#link-grid');
-const linkEmpty     = $('#link-empty');
-const linkSearch    = $('#link-search');
-const linkSearchClear = $('#link-search-clear');
-const linksMeta     = $('#links-meta');
-const addLinkBtn    = $('#add-link-btn');
+const quickGrid     = $('#quick-grid');
+const quickEmpty    = $('#quick-empty');
+const quickSearch   = $('#quick-search');
+const quickSearchClear = $('#quick-search-clear');
+const quickMeta     = $('#quick-meta');
+const quickAddBtn   = $('#quick-add-btn');
+
+const savedArchive  = $('#saved-archive');
+const savedCount    = $('#saved-count');
+const savedGrid     = $('#saved-grid');
 
 const editDialog    = $('#edit-dialog');
 const editForm      = $('#edit-form');
@@ -399,7 +413,9 @@ todoForm.addEventListener('submit', (e) => {
 });
 
 // =====================================================
-// LINKS
+// LINKS — two lists share the dialog & helpers, but render differently.
+//   - quickLinks: tile grid for frequent access
+//   - savedLinks: vertical list of "save for later" entries
 // =====================================================
 const saveLinks = () => store.save();
 
@@ -415,57 +431,81 @@ function initialOf(s) {
   return (s || '?').trim().charAt(0).toUpperCase();
 }
 
-function filteredLinks() {
-  if (!linkQuery) return links;
-  const q = linkQuery.toLowerCase();
-  return links.filter(l =>
+function listFor(kind) {
+  return kind === 'saved' ? savedLinks : quickLinks;
+}
+function renderFor(kind) {
+  if (kind === 'saved') renderSavedLinks();
+  else renderQuickLinks();
+}
+
+function filteredQuickLinks() {
+  if (!quickQuery) return quickLinks;
+  const q = quickQuery.toLowerCase();
+  return quickLinks.filter(l =>
     l.title.toLowerCase().includes(q) ||
     l.url.toLowerCase().includes(q)
   );
 }
 
-function renderLinks() {
-  linkGrid.innerHTML = '';
-  const visible = filteredLinks();
+// --- Quick Links: tile grid ---
+function renderQuickLinks() {
+  quickGrid.innerHTML = '';
+  const visible = filteredQuickLinks();
 
-  linksMeta.textContent = links.length
-    ? (linkQuery ? `${visible.length} of ${links.length}` : `${links.length} saved`)
+  quickMeta.textContent = quickLinks.length
+    ? (quickQuery ? `${visible.length} of ${quickLinks.length}` : `${quickLinks.length} saved`)
     : '';
 
-  linkEmpty.classList.toggle('hidden', links.length > 0);
-  if (links.length === 0) return;
+  quickEmpty.classList.toggle('hidden', quickLinks.length > 0);
+  if (quickLinks.length === 0) return;
 
-  visible.forEach((link) => linkGrid.appendChild(buildLinkTile(link)));
+  visible.forEach((link) => quickGrid.appendChild(buildLinkTile(link, 'quick')));
 
   // Trailing "add" tile (only when not searching)
-  if (!linkQuery) {
+  if (!quickQuery) {
     const add = document.createElement('button');
     add.type = 'button';
     add.className = 'link-tile link-tile-add';
-    add.innerHTML = `<span class="plus">+</span><span class="add-text">Add bookmark</span>`;
-    add.addEventListener('click', openAddLinkDialog);
-    linkGrid.appendChild(add);
+    add.innerHTML = `<span class="plus">+</span><span class="add-text">Add quick link</span>`;
+    add.addEventListener('click', () => openAddLinkDialog());
+    quickGrid.appendChild(add);
   }
 
-  // No results within search
-  if (visible.length === 0 && linkQuery) {
+  if (visible.length === 0 && quickQuery) {
     const note = document.createElement('p');
     note.className = 'empty-state';
     note.style.gridColumn = '1 / -1';
-    note.innerHTML = `<span class="empty-icon">·</span><span class="empty-title">No bookmarks match "${escapeHtml(linkQuery)}"</span>`;
-    linkGrid.appendChild(note);
+    note.innerHTML = `<span class="empty-icon">·</span><span class="empty-title">No quick links match "${escapeHtml(quickQuery)}"</span>`;
+    quickGrid.appendChild(note);
   }
 }
 
-function buildLinkTile(link) {
+// --- Saved for Later: same tile grid, lives inside a collapsible <details> ---
+function renderSavedLinks() {
+  savedGrid.innerHTML = '';
+  if (savedLinks.length === 0) {
+    savedArchive.hidden = true;
+    savedArchive.open = false;
+    return;
+  }
+  savedArchive.hidden = false;
+  savedCount.textContent = savedLinks.length;
+  savedLinks.forEach((link) => savedGrid.appendChild(buildLinkTile(link, 'saved')));
+}
+
+// Single tile factory for both lists. Action set varies by kind:
+//   quick → edit, save-for-later (bookmark), delete
+//   saved → edit, restore to quick links, delete
+function buildLinkTile(link, kind = 'quick') {
   const tile = document.createElement('a');
   tile.className = 'link-tile';
   tile.href = link.url;
   tile.target = '_blank';
   tile.rel = 'noopener noreferrer';
   tile.dataset.id = link.id;
-  // Drag-to-reorder only makes sense in the unfiltered list — disable while searching
-  tile.draggable = !linkQuery;
+  // Drag-to-reorder only makes sense in the unfiltered list — disable quick tiles while searching.
+  tile.draggable = kind === 'quick' ? !quickQuery : true;
 
   // Favicon
   const faviconWrap = document.createElement('div');
@@ -513,11 +553,22 @@ function buildLinkTile(link) {
   actions.className = 'link-actions';
   actions.appendChild(makeLinkAction('edit', 'Edit', (e) => {
     e.preventDefault(); e.stopPropagation();
-    openEditLinkDialog(link.id);
+    openEditLinkDialog(link.id, kind);
   }));
+  if (kind === 'saved') {
+    actions.appendChild(makeLinkAction('restore', 'Move to Quick Links', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      restoreFromSaved(link.id);
+    }));
+  } else {
+    actions.appendChild(makeLinkAction('bookmark', 'Save for later', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      saveForLater(link.id);
+    }));
+  }
   actions.appendChild(makeLinkAction('trash', 'Delete', (e) => {
     e.preventDefault(); e.stopPropagation();
-    deleteLink(link.id);
+    deleteLink(link.id, kind);
   }, 'danger'));
 
   tile.append(actions, faviconWrap, info);
@@ -535,28 +586,58 @@ function makeLinkAction(kind, label, onClick, extra = '') {
   return btn;
 }
 
+// --- Move between lists (mirrors archive/unarchive for todos) ---
+function saveForLater(id) {
+  const idx = quickLinks.findIndex(l => l.id === id);
+  if (idx < 0) return;
+  const [item] = quickLinks.splice(idx, 1);
+  savedLinks.unshift(item);
+  saveLinks(); renderQuickLinks(); renderSavedLinks();
+  showToast('Saved for later', { label: 'Undo', fn: () => {
+    const si = savedLinks.findIndex(l => l.id === id);
+    if (si >= 0) savedLinks.splice(si, 1);
+    quickLinks.splice(idx, 0, item);
+    saveLinks(); renderQuickLinks(); renderSavedLinks();
+  }});
+}
+function restoreFromSaved(id) {
+  const idx = savedLinks.findIndex(l => l.id === id);
+  if (idx < 0) return;
+  const [item] = savedLinks.splice(idx, 1);
+  quickLinks.unshift(item);
+  saveLinks(); renderQuickLinks(); renderSavedLinks();
+}
+
 const ICONS = {
-  edit:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
-  trash:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>',
-  archive: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="5" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/></svg>',
-  restore: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><polyline points="3 4 3 10 9 10"/></svg>',
-  grip:    '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>',
+  edit:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
+  trash:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>',
+  archive:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="5" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/></svg>',
+  bookmark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>',
+  restore:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><polyline points="3 4 3 10 9 10"/></svg>',
+  grip:     '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>',
 };
 
-// --- Link dialog (shared for add + edit) ---
+// --- Link dialog (shared for add to Quick + edit in either list) ---
+// Add only targets Quick Links; saved entries are populated by saving an existing
+// quick link, mirroring how archived todos can't be added directly.
+const EDIT_LABEL = { quick: 'Edit quick link', saved: 'Edit saved link' };
+const REMOVED_TOAST = { quick: 'Quick link removed', saved: 'Saved link removed' };
+
 function openAddLinkDialog() {
   editingLinkId = null;
-  editDialogTitle.textContent = 'Add bookmark';
+  editingLinkKind = 'quick';
+  editDialogTitle.textContent = 'Add quick link';
   editSaveBtn.textContent = 'Add';
   editTitle.value = '';
   editUrl.value = '';
   showLinkDialog();
 }
-function openEditLinkDialog(id) {
-  const link = links.find(l => l.id === id);
+function openEditLinkDialog(id, kind) {
+  const link = listFor(kind).find(l => l.id === id);
   if (!link) return;
   editingLinkId = id;
-  editDialogTitle.textContent = 'Edit bookmark';
+  editingLinkKind = kind;
+  editDialogTitle.textContent = EDIT_LABEL[kind];
   editSaveBtn.textContent = 'Save';
   editTitle.value = link.title;
   editUrl.value = link.url;
@@ -583,17 +664,18 @@ editForm.addEventListener('submit', (e) => {
   if (!title || !url) return;
   if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
 
+  const arr = listFor(editingLinkKind);
   if (editingLinkId == null) {
-    // Add mode
-    links.push({ id: Date.now() + Math.random(), title, url });
+    // Add mode — always quick (saved entries come from saveForLater)
+    arr.push({ id: Date.now() + Math.random(), title, url });
   } else {
-    // Edit mode
-    const link = links.find(l => l.id === editingLinkId);
+    const link = arr.find(l => l.id === editingLinkId);
     if (!link) { closeLinkDialog(); return; }
     link.title = title;
     link.url = url;
   }
-  saveLinks(); renderLinks();
+  saveLinks();
+  renderFor(editingLinkKind);
   closeLinkDialog();
 });
 editCancel.addEventListener('click', closeLinkDialog);
@@ -601,27 +683,33 @@ editClose.addEventListener('click', closeLinkDialog);
 editDialog.addEventListener('click', (e) => {
   if (e.target === editDialog) closeLinkDialog();
 });
-addLinkBtn.addEventListener('click', openAddLinkDialog);
+quickAddBtn.addEventListener('click', () => openAddLinkDialog());
 
-function deleteLink(id) {
-  const idx = links.findIndex(l => l.id === id);
+function deleteLink(id, kind) {
+  const arr = listFor(kind);
+  const idx = arr.findIndex(l => l.id === id);
   if (idx < 0) return;
-  const [removed] = links.splice(idx, 1);
-  saveLinks(); renderLinks();
-  showToast('Bookmark removed', { label: 'Undo', fn: () => { links.splice(idx, 0, removed); saveLinks(); renderLinks(); } });
+  const [removed] = arr.splice(idx, 1);
+  saveLinks();
+  renderFor(kind);
+  showToast(REMOVED_TOAST[kind], { label: 'Undo', fn: () => {
+    arr.splice(idx, 0, removed);
+    saveLinks();
+    renderFor(kind);
+  }});
 }
 
-// Search
-function applySearch(value) {
-  linkQuery = value.trim();
-  linkSearchClear.hidden = linkSearch.value.length === 0;
-  renderLinks();
+// Quick Links search (saved-for-later isn't searched — it's a collapsible archive)
+function applyQuickSearch(value) {
+  quickQuery = value.trim();
+  quickSearchClear.hidden = quickSearch.value.length === 0;
+  renderQuickLinks();
 }
-linkSearch.addEventListener('input', (e) => applySearch(e.target.value));
-linkSearchClear.addEventListener('click', () => {
-  linkSearch.value = '';
-  applySearch('');
-  linkSearch.focus();
+quickSearch.addEventListener('input', (e) => applyQuickSearch(e.target.value));
+quickSearchClear.addEventListener('click', () => {
+  quickSearch.value = '';
+  applyQuickSearch('');
+  quickSearch.focus();
 });
 
 // =====================================================
@@ -711,7 +799,8 @@ syncForm.addEventListener('submit', async (e) => {
   applyData(store.state, remote);
   document.documentElement.setAttribute('data-theme', store.state.theme);
   renderTodos();
-  renderLinks();
+  renderQuickLinks();
+  renderSavedLinks();
   store._setSync('synced');
   closeSyncDialog();
   showToast('Cloud sync enabled');
@@ -739,7 +828,8 @@ syncRefreshBtn.addEventListener('click', async () => {
     applyData(store.state, remote);
     document.documentElement.setAttribute('data-theme', store.state.theme);
     renderTodos();
-    renderLinks();
+    renderQuickLinks();
+    renderSavedLinks();
     store._setSync('synced');
     setSyncStatusText('Pulled latest from gist.');
   } catch (err) {
@@ -753,8 +843,8 @@ document.addEventListener('keydown', (e) => {
   const t = e.target;
   const inField = t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable;
 
-  if (e.key === 'Escape' && document.activeElement === linkSearch) {
-    linkSearch.value = ''; applySearch(''); linkSearch.blur(); return;
+  if (e.key === 'Escape' && document.activeElement === quickSearch) {
+    quickSearch.value = ''; applyQuickSearch(''); quickSearch.blur(); return;
   }
 
   if (inField) return;
@@ -763,7 +853,7 @@ document.addEventListener('keydown', (e) => {
   if (k === 'n') { e.preventDefault(); todoInput.focus(); }
   else if (k === 'l') { e.preventDefault(); openAddLinkDialog(); }
   else if (k === 'd') { e.preventDefault(); themeToggle.click(); }
-  else if (k === '/') { e.preventDefault(); linkSearch.focus(); linkSearch.select(); }
+  else if (k === '/') { e.preventDefault(); quickSearch.focus(); quickSearch.select(); }
 });
 
 // --- Helpers ---
@@ -877,11 +967,18 @@ setupDnd({
   onChange: () => { saveTodos(); renderTodos(); },
 });
 setupDnd({
-  container: linkGrid,
+  container: quickGrid,
   itemSelector: '.link-tile:not(.link-tile-add)',
-  getList: () => links,
+  getList: () => quickLinks,
   axis: 'x',
-  onChange: () => { saveLinks(); renderLinks(); },
+  onChange: () => { saveLinks(); renderQuickLinks(); },
+});
+setupDnd({
+  container: savedGrid,
+  itemSelector: '.link-tile',
+  getList: () => savedLinks,
+  axis: 'x',
+  onChange: () => { saveLinks(); renderSavedLinks(); },
 });
 
 // --- Init ---
@@ -890,7 +987,8 @@ async function init() {
   document.documentElement.setAttribute('data-theme', store.state.theme);
   updateHeader();
   renderTodos();
-  renderLinks();
+  renderQuickLinks();
+  renderSavedLinks();
 }
 init();
 

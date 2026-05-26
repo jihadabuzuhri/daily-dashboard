@@ -9,14 +9,22 @@ const STORE_FILE = path.resolve(__dirname, 'data', 'store.json');
 const DEFAULTS = {
   todos: [],
   archivedTodos: [],
-  links: [],
+  quickLinks: [],
+  savedLinks: [],
   theme: 'dark',
 };
 
 async function readStore() {
   try {
     const text = await fs.readFile(STORE_FILE, 'utf-8');
-    return { ...DEFAULTS, ...JSON.parse(text) };
+    const parsed = JSON.parse(text);
+    // Legacy migration: a single `links` array becomes quickLinks. Done on read so
+    // existing data files keep working until the next write normalizes them.
+    if (Array.isArray(parsed.links) && !Array.isArray(parsed.quickLinks)) {
+      parsed.quickLinks = parsed.links;
+    }
+    delete parsed.links;
+    return { ...DEFAULTS, ...parsed };
   } catch (err) {
     if (err.code === 'ENOENT') return { ...DEFAULTS };
     throw err;
@@ -57,11 +65,14 @@ function fileStorePlugin() {
           if (req.method === 'PUT') {
             const body = await readBody(req);
             const parsed = JSON.parse(body);
-            // Only persist known keys to avoid junk
+            // Only persist known keys to avoid junk. Legacy `links` folds into quickLinks.
             const safe = {
               todos: Array.isArray(parsed.todos) ? parsed.todos : [],
               archivedTodos: Array.isArray(parsed.archivedTodos) ? parsed.archivedTodos : [],
-              links: Array.isArray(parsed.links) ? parsed.links : [],
+              quickLinks: Array.isArray(parsed.quickLinks)
+                ? parsed.quickLinks
+                : (Array.isArray(parsed.links) ? parsed.links : []),
+              savedLinks: Array.isArray(parsed.savedLinks) ? parsed.savedLinks : [],
               theme: parsed.theme === 'light' ? 'light' : 'dark',
             };
             await writeStore(safe);

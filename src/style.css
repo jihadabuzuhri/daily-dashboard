@@ -952,6 +952,64 @@ body {
 }
 .link-tile-add .add-text { font-size: 12px; color: inherit; }
 
+/* ---------- Saved for Later (collapsible inside Quick Links, mirrors .archive) ---------- */
+.link-archive {
+  margin-top: 18px;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 12px;
+}
+.link-archive .archive-summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+  user-select: none;
+}
+.link-archive .archive-summary::-webkit-details-marker { display: none; }
+.link-archive .archive-summary:hover { background: var(--surface-2); color: var(--text); }
+.link-archive[open] .archive-caret { transform: rotate(90deg); }
+
+.link-grid-saved {
+  margin-top: 10px;
+  /* Tighter packing than quick links so the cards visibly read as secondary */
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 8px;
+  animation: slideDown var(--t-base) var(--ease);
+}
+/* Saved tiles are smaller and visually subtler — they're for less-frequent stuff */
+.link-grid-saved .link-tile {
+  background: transparent;
+  border-style: dashed;
+  padding: 14px 8px 10px;
+  min-height: 92px;
+  gap: 6px;
+}
+.link-grid-saved .link-tile:hover {
+  background: var(--surface-2);
+  border-style: solid;
+}
+.link-grid-saved .link-favicon-wrap {
+  width: 32px; height: 32px;
+  border-radius: 8px;
+}
+.link-grid-saved .link-favicon { width: 18px; height: 18px; }
+.link-grid-saved .link-favicon-fallback { font-size: 16px; }
+.link-grid-saved .link-title {
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+.link-grid-saved .link-domain { font-size: 10.5px; }
+.link-grid-saved .link-tile:hover .link-title { color: var(--text); }
+
 /* ---------- Footer ---------- */
 .footer { display: flex; justify-content: center; margin-top: auto; padding-top: 24px; }
 .footer-keys {
