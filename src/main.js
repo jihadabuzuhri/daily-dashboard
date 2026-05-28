@@ -71,7 +71,9 @@ function applyData(state, data) {
   const quick = data.quickLinks ?? data.links ?? [];
   state.quickLinks.splice(0, state.quickLinks.length, ...quick);
   state.savedLinks.splice(0, state.savedLinks.length, ...(data.savedLinks || []));
+  state.customCategories.splice(0, state.customCategories.length, ...(data.customCategories || []));
   state.theme = data.theme === 'light' ? 'light' : 'dark';
+  state.groupByCategory = !!data.groupByCategory;
 }
 
 function isEmpty(data) {
@@ -84,7 +86,7 @@ function isEmpty(data) {
 }
 
 const store = {
-  state: { todos: [], archivedTodos: [], quickLinks: [], savedLinks: [], theme: 'dark' },
+  state: { todos: [], archivedTodos: [], quickLinks: [], savedLinks: [], theme: 'dark', customCategories: [], groupByCategory: false },
   _saveTimer: null,
   mode: 'local',          // 'file' | 'gist' | 'local'
   syncStatus: 'idle',     // 'idle' | 'syncing' | 'synced' | 'error'
@@ -171,6 +173,7 @@ let todos = store.state.todos;
 let archivedTodos = store.state.archivedTodos;
 let quickLinks = store.state.quickLinks;
 let savedLinks = store.state.savedLinks;
+let customCategories = store.state.customCategories;
 let quickQuery = '';
 let editingLinkId = null;
 let editingLinkKind = 'quick'; // 'quick' | 'saved' — which list the dialog is editing
@@ -271,6 +274,355 @@ function showToast(msg, action) {
 function hideToast() { toast.classList.remove('show'); }
 
 // =====================================================
+// CATEGORIES — color-coded tags for tasks
+//   Users create their own tags via the "+" button at the end of the chip row.
+//   They live in store.state.customCategories so they sync via gist. The
+//   selected chip does double duty: it filters the visible tasks AND becomes
+//   the default tag applied to newly-added tasks.
+// =====================================================
+
+// Palette offered when creating a tag.
+const CATEGORY_PALETTE = [
+  '#5a9eff', '#6ec694', '#ec8a76', '#c193e0',
+  '#f0c75e', '#65c8c4', '#e87ab5', '#9b9ed4',
+];
+
+function getAllCategories() { return customCategories; }
+function getCategory(id) { return id ? customCategories.find((c) => c.id === id) || null : null; }
+function hexToRgba(hex, alpha) {
+  const v = hex.replace('#', '');
+  const r = parseInt(v.slice(0, 2), 16);
+  const g = parseInt(v.slice(2, 4), 16);
+  const b = parseInt(v.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+// Active chip: filters visible tasks (flat view) + becomes default tag for new tasks.
+let selectedCategoryId = null;
+// Grouped-view toggle — synced via store.state.groupByCategory. Updated from
+// the loaded state in init() and whenever the user toggles via the chip row.
+let groupByCategory = false;
+// Ephemeral per-session memory of which group headers the user collapsed.
+// Not persisted — every session starts with everything open.
+const collapsedGroups = new Set();
+
+const categoryRow = $('#category-row');
+
+function applyCategoryVars(el, catId) {
+  const cat = getCategory(catId);
+  if (cat) {
+    el.style.setProperty('--cat-color', cat.color);
+    el.style.setProperty('--cat-soft', cat.soft);
+  } else {
+    el.style.removeProperty('--cat-color');
+    el.style.removeProperty('--cat-soft');
+  }
+}
+
+function buildCategoryChip(cat, { selected, onClick }) {
+  const chip = document.createElement('button');
+  chip.type = 'button';
+  chip.className = 'category-chip' + (selected ? ' is-selected' : '');
+  chip.dataset.category = cat.id;
+  applyCategoryVars(chip, cat.id);
+  chip.setAttribute('aria-pressed', selected ? 'true' : 'false');
+  chip.innerHTML = `<span class="chip-dot"></span><span>${escapeHtml(cat.label)}</span>`;
+  chip.addEventListener('click', () => onClick(cat.id));
+  return chip;
+}
+
+function renderCategoryRow() {
+  if (!categoryRow) return;
+  categoryRow.innerHTML = '';
+
+  const onSelect = (id) => {
+    // Clicking a chip while grouped switches back to flat view, so the
+    // "filter" semantics of the chip kick in instead of just sitting unused.
+    if (groupByCategory) {
+      groupByCategory = false;
+      store.state.groupByCategory = false;
+    }
+    selectedCategoryId = selectedCategoryId === id ? null : id;
+    store.save();
+    renderCategoryRow();
+    renderTodos();
+  };
+
+  // Each chip is wrapped so it can carry a tiny × for deletion on hover
+  // (a <button> inside another <button> would be invalid HTML).
+  getAllCategories().forEach((cat) => {
+    const chip = buildCategoryChip(cat, {
+      selected: selectedCategoryId === cat.id,
+      onClick: onSelect,
+    });
+    const wrap = document.createElement('span');
+    wrap.className = 'category-chip-wrap';
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.className = 'category-chip-delete';
+    x.innerHTML = '&times;';
+    x.title = `Delete "${cat.label}"`;
+    x.setAttribute('aria-label', `Delete ${cat.label} tag`);
+    x.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteCategory(cat.id);
+    });
+    wrap.append(chip, x);
+    categoryRow.appendChild(wrap);
+  });
+
+  // Trailing "+" button — opens the create dialog
+  const addBtn = document.createElement('button');
+  addBtn.type = 'button';
+  addBtn.className = 'category-add-btn';
+  addBtn.title = 'Add a custom tag';
+  addBtn.setAttribute('aria-label', 'Add a custom tag');
+  addBtn.innerHTML = '+';
+  addBtn.addEventListener('click', openCreateCategoryDialog);
+  categoryRow.appendChild(addBtn);
+
+  // Group-by-tag toggle — sits next to the "+" button
+  const groupBtn = document.createElement('button');
+  groupBtn.type = 'button';
+  groupBtn.className = 'category-group-btn' + (groupByCategory ? ' is-active' : '');
+  const groupTitle = groupByCategory ? 'Switch to flat view' : 'Group by tag';
+  groupBtn.title = groupTitle;
+  groupBtn.setAttribute('aria-label', groupTitle);
+  groupBtn.setAttribute('aria-pressed', groupByCategory ? 'true' : 'false');
+  groupBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="4" cy="6" r="1.2" fill="currentColor"/><line x1="9" y1="6" x2="20" y2="6"/><circle cx="4" cy="12" r="1.2" fill="currentColor"/><line x1="9" y1="12" x2="20" y2="12"/><circle cx="4" cy="18" r="1.2" fill="currentColor"/><line x1="9" y1="18" x2="20" y2="18"/></svg>';
+  groupBtn.addEventListener('click', () => {
+    groupByCategory = !groupByCategory;
+    // Filter chip and grouped view are mutually exclusive — turning on
+    // grouping clears any active filter so the full grouped list shows.
+    if (groupByCategory) selectedCategoryId = null;
+    store.state.groupByCategory = groupByCategory;
+    store.save();
+    renderCategoryRow();
+    renderTodos();
+  });
+  categoryRow.appendChild(groupBtn);
+}
+
+function buildCategoryPill(todo, archived) {
+  const cat = getCategory(todo.category);
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'category-pill' + (cat ? ' is-set' : '');
+  if (cat) {
+    applyCategoryVars(btn, cat.id);
+    btn.title = `${cat.label} (click to change)`;
+    btn.setAttribute('aria-label', `Tag: ${cat.label}. Click to change.`);
+  } else {
+    btn.title = 'Add a tag';
+    btn.setAttribute('aria-label', 'Add a tag');
+  }
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openCategoryPopover(btn, todo.id, archived);
+  });
+  return btn;
+}
+
+// --- Create-tag dialog ---
+const categoryDialog       = $('#category-dialog');
+const categoryForm         = $('#category-form');
+const categoryName         = $('#category-name');
+const colorSwatches        = $('#color-swatches');
+const categoryCancel       = $('#category-cancel');
+const categoryDialogClose  = $('#category-dialog-close');
+let pickedColor = CATEGORY_PALETTE[0];
+
+function renderColorSwatches() {
+  colorSwatches.innerHTML = '';
+  CATEGORY_PALETTE.forEach((color) => {
+    const sw = document.createElement('button');
+    sw.type = 'button';
+    sw.className = 'color-swatch' + (color === pickedColor ? ' is-selected' : '');
+    sw.style.background = color;
+    sw.setAttribute('role', 'radio');
+    sw.setAttribute('aria-checked', color === pickedColor ? 'true' : 'false');
+    sw.setAttribute('aria-label', `Color ${color}`);
+    sw.addEventListener('click', () => {
+      pickedColor = color;
+      renderColorSwatches();
+    });
+    colorSwatches.appendChild(sw);
+  });
+}
+
+function openCreateCategoryDialog() {
+  pickedColor = CATEGORY_PALETTE[0];
+  categoryName.value = '';
+  renderColorSwatches();
+  if (typeof categoryDialog.showModal === 'function') categoryDialog.showModal();
+  else categoryDialog.setAttribute('open', '');
+  requestAnimationFrame(() => categoryName.focus());
+}
+function closeCreateCategoryDialog() {
+  if (categoryDialog.open) categoryDialog.close();
+}
+
+categoryForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const label = categoryName.value.trim();
+  if (!label) return;
+  const id = `c-${Date.now().toString(36)}-${Math.floor(Math.random() * 1000)}`;
+  customCategories.push({
+    id, label,
+    color: pickedColor,
+    soft: hexToRgba(pickedColor, 0.16),
+  });
+  store.save();
+  renderCategoryRow();
+  closeCreateCategoryDialog();
+});
+categoryCancel.addEventListener('click', closeCreateCategoryDialog);
+categoryDialogClose.addEventListener('click', closeCreateCategoryDialog);
+categoryDialog.addEventListener('click', (e) => {
+  if (e.target === categoryDialog) closeCreateCategoryDialog();
+});
+
+function deleteCategory(id) {
+  const cat = getCategory(id);
+  if (!cat) return;
+  const idx = customCategories.findIndex((c) => c.id === id);
+  if (idx < 0) return;
+
+  // Capture for undo: the category object + any tasks pointing at it.
+  const affectedActive  = todos.filter((t) => t.category === id);
+  const affectedArchive = archivedTodos.filter((t) => t.category === id);
+  const wasFiltering    = selectedCategoryId === id;
+
+  customCategories.splice(idx, 1);
+  affectedActive.forEach((t) => { delete t.category; });
+  affectedArchive.forEach((t) => { delete t.category; });
+  if (wasFiltering) selectedCategoryId = null;
+
+  store.save();
+  renderCategoryRow();
+  renderTodos();
+
+  showToast(`Tag "${cat.label}" deleted`, { label: 'Undo', fn: () => {
+    customCategories.splice(idx, 0, cat);
+    affectedActive.forEach((t) => { t.category = id; });
+    affectedArchive.forEach((t) => { t.category = id; });
+    if (wasFiltering) selectedCategoryId = id;
+    store.save();
+    renderCategoryRow();
+    renderTodos();
+  }});
+}
+
+// --- Tag-picker popover (used to change a tag on an existing task) ---
+let activePopover = null;
+
+function closeCategoryPopover() {
+  if (!activePopover) return;
+  activePopover.remove();
+  activePopover = null;
+  document.removeEventListener('mousedown', popoverOutsideMousedown, true);
+  document.removeEventListener('keydown', popoverEscape, true);
+  window.removeEventListener('resize', closeCategoryPopover);
+  window.removeEventListener('scroll', closeCategoryPopover, true);
+}
+function popoverOutsideMousedown(e) {
+  if (activePopover && !activePopover.contains(e.target)) closeCategoryPopover();
+}
+function popoverEscape(e) {
+  if (e.key === 'Escape') { e.stopPropagation(); closeCategoryPopover(); }
+}
+
+function openCategoryPopover(triggerEl, todoId, archived) {
+  closeCategoryPopover();
+  const currentCat = getTodoCategory(todoId, archived);
+
+  const pop = document.createElement('div');
+  pop.className = 'category-popover';
+  pop.setAttribute('role', 'menu');
+
+  const cats = getAllCategories();
+  cats.forEach((cat) => {
+    pop.appendChild(buildCategoryChip(cat, {
+      selected: currentCat === cat.id,
+      onClick: (id) => {
+        const next = currentCat === id ? null : id;
+        setTodoCategory(todoId, next, archived);
+        closeCategoryPopover();
+      },
+    }));
+  });
+
+  if (currentCat) {
+    const clearBtn = document.createElement('button');
+    clearBtn.type = 'button';
+    clearBtn.className = 'category-chip category-clear';
+    clearBtn.innerHTML = '<span>Clear</span>';
+    clearBtn.addEventListener('click', () => {
+      setTodoCategory(todoId, null, archived);
+      closeCategoryPopover();
+    });
+    pop.appendChild(clearBtn);
+  }
+
+  // No tags defined yet — offer to create one so the popover isn't a dead end.
+  if (cats.length === 0) {
+    const create = document.createElement('button');
+    create.type = 'button';
+    create.className = 'category-chip';
+    create.innerHTML = '<span>+ New tag</span>';
+    create.addEventListener('click', () => {
+      closeCategoryPopover();
+      openCreateCategoryDialog();
+    });
+    pop.appendChild(create);
+  }
+
+  // Mount, measure, then position. Use fixed coords anchored to the trigger.
+  pop.style.position = 'fixed';
+  pop.style.visibility = 'hidden';
+  pop.style.top = '0';
+  pop.style.left = '0';
+  document.body.appendChild(pop);
+  activePopover = pop;
+
+  const rect = triggerEl.getBoundingClientRect();
+  const pw = pop.offsetWidth;
+  const ph = pop.offsetHeight;
+  let top = rect.bottom + 6;
+  if (top + ph > window.innerHeight - 8) top = Math.max(8, rect.top - ph - 6);
+  let left = rect.right - pw;
+  if (left + pw > window.innerWidth - 8) left = window.innerWidth - pw - 8;
+  if (left < 8) left = 8;
+  pop.style.top = `${top}px`;
+  pop.style.left = `${left}px`;
+  pop.style.visibility = '';
+
+  // Defer the global listeners by one tick so the click that opened us
+  // doesn't immediately close it.
+  setTimeout(() => {
+    document.addEventListener('mousedown', popoverOutsideMousedown, true);
+    document.addEventListener('keydown', popoverEscape, true);
+    window.addEventListener('resize', closeCategoryPopover);
+    window.addEventListener('scroll', closeCategoryPopover, true);
+  }, 0);
+}
+
+function getTodoCategory(id, archived) {
+  const arr = archived ? archivedTodos : todos;
+  return arr.find((x) => x.id === id)?.category || null;
+}
+function setTodoCategory(id, category, archived) {
+  const arr = archived ? archivedTodos : todos;
+  const t = arr.find((x) => x.id === id);
+  if (!t) return;
+  if (category) t.category = category;
+  else delete t.category;
+  saveTodos();
+  renderTodos();
+}
+
+// =====================================================
 // TODOS
 // =====================================================
 // All persisted state lives in store.state; the arrays here are references,
@@ -281,7 +633,9 @@ function buildTodoItem(todo, { archived = false } = {}) {
   const li = document.createElement('li');
   li.className = `todo-item${todo.done ? ' completed' : ''}`;
   li.dataset.id = todo.id;
-  li.draggable = true;
+  // Grouped view: disable drag — cross-group drops would snap back since
+  // group placement is derived from the task's category, not array order.
+  li.draggable = !(groupByCategory && !archived);
 
   const handle = document.createElement('span');
   handle.className = 'drag-handle';
@@ -314,7 +668,9 @@ function buildTodoItem(todo, { archived = false } = {}) {
   }
   actions.appendChild(makeBtn('trash', 'Delete', () => deleteTodo(todo.id, archived), 'danger'));
 
-  li.append(handle, cb, span, actions);
+  const pill = buildCategoryPill(todo, archived);
+
+  li.append(handle, cb, span, pill, actions);
   return li;
 }
 
@@ -333,35 +689,116 @@ function renderTodos() {
   todoList.innerHTML = '';
   archiveList.innerHTML = '';
 
-  const total = todos.length;
-  const done = todos.filter(t => t.done).length;
+  const filterId  = selectedCategoryId;
+  const filterCat = getCategory(filterId);
+  // Filtering only applies in the flat view; grouped view always shows all.
+  const filtering = !groupByCategory && !!filterCat;
 
-  todoEmpty.classList.toggle('hidden', total > 0);
-  tasksMeta.textContent = total ? `${done} of ${total} done` : '';
+  const visibleTodos    = filtering ? todos.filter((t) => t.category === filterId) : todos;
+  const visibleArchived = filtering ? archivedTodos.filter((t) => t.category === filterId) : archivedTodos;
 
-  if (total > 0) {
+  const total        = todos.length;
+  const visibleTotal = visibleTodos.length;
+  const visibleDone  = visibleTodos.filter((t) => t.done).length;
+
+  todoEmpty.classList.toggle('hidden', visibleTotal > 0);
+
+  // Empty-state messaging adapts to whichever mode is active.
+  const emptyTitle = todoEmpty.querySelector('.empty-title');
+  const emptyHint  = todoEmpty.querySelector('.empty-hint');
+  if (filtering && total > 0) {
+    emptyTitle.textContent = `No "${filterCat.label}" tasks`;
+    emptyHint.innerHTML = `Click <strong>${escapeHtml(filterCat.label)}</strong> again to show all.`;
+  } else {
+    emptyTitle.textContent = 'Nothing on the list';
+    emptyHint.innerHTML = 'Press <kbd>N</kbd> to add one';
+  }
+
+  if (filtering) {
+    tasksMeta.textContent = `${visibleDone} of ${visibleTotal} · ${filterCat.label}`;
+  } else if (groupByCategory && total > 0) {
+    tasksMeta.textContent = `${visibleDone} of ${visibleTotal} done · grouped`;
+  } else {
+    tasksMeta.textContent = total ? `${visibleDone} of ${total} done` : '';
+  }
+
+  if (visibleTotal > 0) {
     progressEl.classList.add('show');
-    progressFill.style.width = `${(done / total) * 100}%`;
+    progressFill.style.width = `${(visibleDone / visibleTotal) * 100}%`;
   } else {
     progressEl.classList.remove('show');
     progressFill.style.width = '0%';
   }
 
-  todos.forEach((todo) => todoList.appendChild(buildTodoItem(todo)));
+  if (groupByCategory) {
+    renderGroupedTodos();
+  } else {
+    visibleTodos.forEach((todo) => todoList.appendChild(buildTodoItem(todo)));
+  }
 
-  // Archive section
-  if (archivedTodos.length > 0) {
+  // Archive — flat (not grouped), filtered if a filter is active.
+  const archivedVisibleCount = filtering ? visibleArchived.length : archivedTodos.length;
+  if (archivedVisibleCount > 0) {
     archiveEl.hidden = false;
-    archiveCount.textContent = archivedTodos.length;
-    archivedTodos.forEach((todo) => archiveList.appendChild(buildTodoItem(todo, { archived: true })));
+    archiveCount.textContent = archivedVisibleCount;
+    visibleArchived.forEach((todo) => archiveList.appendChild(buildTodoItem(todo, { archived: true })));
   } else {
     archiveEl.hidden = true;
     archiveEl.open = false;
   }
 }
 
+// Grouped view: one collapsible section per tag (that has tasks), with an
+// "Untagged" section last for tasks that have no category. Order within each
+// section follows the underlying todos array, so manual reorders are preserved.
+function renderGroupedTodos() {
+  const buckets = new Map();
+  todos.forEach((t) => {
+    const key = getCategory(t.category) ? t.category : '__untagged__';
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(t);
+  });
+
+  customCategories.forEach((cat) => {
+    const items = buckets.get(cat.id);
+    if (items && items.length) todoList.appendChild(buildTaskGroup(cat, items));
+  });
+  const untagged = buckets.get('__untagged__');
+  if (untagged && untagged.length) todoList.appendChild(buildTaskGroup(null, untagged));
+}
+
+function buildTaskGroup(cat, items) {
+  const details = document.createElement('details');
+  details.className = 'task-group';
+  const key = cat ? cat.id : '__untagged__';
+  details.open = !collapsedGroups.has(key);
+  details.addEventListener('toggle', () => {
+    if (details.open) collapsedGroups.delete(key);
+    else collapsedGroups.add(key);
+  });
+
+  const summary = document.createElement('summary');
+  summary.className = 'task-group-summary';
+  if (cat) summary.style.setProperty('--cat-color', cat.color);
+  summary.innerHTML = `
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="archive-caret" aria-hidden="true"><polyline points="9 6 15 12 9 18"/></svg>
+    <span class="task-group-dot"></span>
+    <span class="task-group-label">${escapeHtml(cat ? cat.label : 'Untagged')}</span>
+    <span class="task-group-count">${items.length}</span>
+  `;
+
+  const ul = document.createElement('ul');
+  ul.className = 'todo-list task-group-list';
+  items.forEach((todo) => ul.appendChild(buildTodoItem(todo)));
+
+  details.append(summary, ul);
+  return details;
+}
+
 function addTodo(text) {
-  todos.unshift({ id: Date.now() + Math.random(), text, done: false });
+  const todo = { id: Date.now() + Math.random(), text, done: false };
+  if (selectedCategoryId) todo.category = selectedCategoryId;
+  todos.unshift(todo);
   saveTodos(); renderTodos();
 }
 function toggleTodo(id, archived) {
@@ -1079,7 +1516,9 @@ setupDnd({
 async function init() {
   await store.load();
   document.documentElement.setAttribute('data-theme', store.state.theme);
+  groupByCategory = !!store.state.groupByCategory;
   updateHeader();
+  renderCategoryRow();
   renderTodos();
   renderQuickLinks();
   renderSavedLinks();

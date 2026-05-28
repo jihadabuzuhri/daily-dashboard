@@ -64,6 +64,8 @@
           <kbd class="add-task-kbd" aria-hidden="true">N</kbd>
         </form>
 
+        <div class="category-row" id="category-row" role="toolbar" aria-label="Tag for new task"></div>
+
         <ul class="todo-list" id="todo-list"></ul>
         <p class="empty-state" id="todo-empty">
           <span class="empty-icon">·</span>
@@ -183,6 +185,27 @@
         </p>
         <footer class="edit-footer">
           <button type="submit" class="btn-primary">Got it</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog class="edit-dialog" id="category-dialog" aria-labelledby="category-dialog-title">
+      <form method="dialog" class="edit-form" id="category-form">
+        <header class="edit-header">
+          <h3 id="category-dialog-title">New tag</h3>
+          <button type="button" class="dialog-close" id="category-dialog-close" aria-label="Close">&times;</button>
+        </header>
+        <label class="field">
+          <span class="field-label">Name</span>
+          <input type="text" id="category-name" placeholder="e.g. Errands" autocomplete="off" maxlength="20" required />
+        </label>
+        <div class="field">
+          <span class="field-label">Color</span>
+          <div class="color-swatches" id="color-swatches" role="radiogroup" aria-label="Tag color"></div>
+        </div>
+        <footer class="edit-footer">
+          <button type="button" class="btn-ghost" id="category-cancel">Cancel</button>
+          <button type="submit" class="btn-primary" id="category-save">Create</button>
         </footer>
       </form>
     </dialog>

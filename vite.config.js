@@ -13,6 +13,8 @@ const DEFAULTS = {
   quickLinks: [],
   savedLinks: [],
   theme: 'dark',
+  customCategories: [],
+  groupByCategory: false,
 };
 
 async function readStore() {
@@ -75,6 +77,8 @@ function fileStorePlugin() {
                 : (Array.isArray(parsed.links) ? parsed.links : []),
               savedLinks: Array.isArray(parsed.savedLinks) ? parsed.savedLinks : [],
               theme: parsed.theme === 'light' ? 'light' : 'dark',
+              customCategories: Array.isArray(parsed.customCategories) ? parsed.customCategories : [],
+              groupByCategory: !!parsed.groupByCategory,
             };
             await writeStore(safe);
             res.statusCode = 204;

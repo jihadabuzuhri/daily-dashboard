@@ -517,6 +517,263 @@ body {
   background: var(--surface-3);
 }
 
+/* ---------- Categories / Tags ----------
+   The chip row sits under the add-task input and selects the tag for the
+   next task created. Each todo also renders a pill (.category-pill); clicking
+   it opens a .category-popover so the tag can be changed or cleared in place.
+   Per-instance colors are driven by --cat-color / --cat-soft custom props set
+   inline by the JS, so the CSS itself stays palette-agnostic. */
+.category-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: -4px 0 14px;
+  padding: 0 2px;
+}
+
+.category-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 11px;
+  border-radius: 99px;
+  border: 1px solid var(--border-soft);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--t-fast) var(--ease);
+}
+.category-chip:hover {
+  border-color: var(--border);
+  color: var(--text);
+  background: var(--surface-2);
+}
+.category-chip.is-selected {
+  background: var(--cat-soft);
+  border-color: var(--cat-color);
+  color: var(--text);
+}
+.chip-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--cat-color, var(--text-faint));
+  flex-shrink: 0;
+}
+
+/* The pill on each todo — color-only, no label. A solid dot with a soft
+   halo when set; a dashed empty circle (hover-only) when unset. */
+.category-pill {
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px dashed var(--border);
+  background: transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all var(--t-fast) var(--ease);
+}
+.category-pill.is-set {
+  background: var(--cat-color);
+  border: none;
+  box-shadow: 0 0 0 3px var(--cat-soft);
+}
+.category-pill:not(.is-set) {
+  opacity: 0;
+  pointer-events: none;
+}
+.todo-item:hover .category-pill:not(.is-set),
+.todo-item:focus-within .category-pill:not(.is-set) {
+  opacity: 1;
+  pointer-events: auto;
+}
+.category-pill:hover { transform: scale(1.18); }
+.category-pill.is-set:hover { box-shadow: 0 0 0 4px var(--cat-soft); }
+.category-pill:not(.is-set):hover {
+  border-style: solid;
+  border-color: var(--text-muted);
+}
+.todo-item.completed .category-pill.is-set { opacity: 0.55; }
+
+/* Popover — anchored via fixed coords from JS */
+.category-popover {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  z-index: 110;
+  max-width: 290px;
+  animation: dialogIn var(--t-fast) var(--ease-spring);
+}
+.category-clear { color: var(--text-faint); }
+.category-clear:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: transparent;
+}
+
+/* "+" button at the end of the chip row — opens the create-tag dialog */
+.category-add-btn {
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 16px;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+  display: grid; place-items: center;
+  transition: all var(--t-fast) var(--ease);
+}
+.category-add-btn:hover {
+  border-style: solid;
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+  transform: rotate(90deg);
+}
+
+/* Group-by-tag toggle — sits to the right of the "+" button */
+.category-group-btn {
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--border-soft);
+  background: transparent;
+  color: var(--text-muted);
+  padding: 0;
+  cursor: pointer;
+  display: grid; place-items: center;
+  transition: all var(--t-fast) var(--ease);
+}
+.category-group-btn svg { width: 13px; height: 13px; }
+.category-group-btn:hover {
+  border-color: var(--border);
+  color: var(--text);
+  background: var(--surface-2);
+}
+.category-group-btn.is-active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Custom chip wrapper holds the chip + a tiny × visible on hover */
+.category-chip-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.category-chip-delete {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+  display: grid; place-items: center;
+  opacity: 0;
+  transform: scale(0.85);
+  transition: all var(--t-fast) var(--ease);
+  z-index: 1;
+}
+.category-chip-wrap:hover .category-chip-delete,
+.category-chip-delete:focus-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+.category-chip-delete:hover {
+  background: var(--danger);
+  color: var(--bg);
+  border-color: var(--danger);
+}
+
+/* Color swatches in the create-tag dialog */
+.color-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.color-swatch {
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  box-shadow: 0 0 0 1px var(--border-soft);
+  transition: all var(--t-fast) var(--ease);
+}
+.color-swatch:hover { transform: scale(1.1); }
+.color-swatch.is-selected {
+  border-color: var(--surface);
+  box-shadow: 0 0 0 2px var(--text);
+}
+
+/* Grouped task view — each tag becomes a collapsible <details> section.
+   Visuals mirror the archive disclosure pattern, with a colored dot in the
+   summary instead of a label-only header. */
+.task-group {
+  margin-top: 4px;
+}
+.task-group + .task-group {
+  margin-top: 6px;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 6px;
+}
+.task-group-summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 13px;
+  font-family: var(--font-body);
+  transition: background var(--t-fast) var(--ease);
+  user-select: none;
+}
+.task-group-summary::-webkit-details-marker { display: none; }
+.task-group-summary:hover { background: var(--surface-2); }
+.task-group[open] > .task-group-summary .archive-caret { transform: rotate(90deg); }
+.task-group-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--cat-color, var(--text-faint));
+  flex-shrink: 0;
+}
+.task-group-label { flex: 1; }
+.task-group-count {
+  background: var(--surface-3);
+  color: var(--text-muted);
+  padding: 1px 8px;
+  border-radius: 99px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  letter-spacing: 0;
+}
+.task-group-list {
+  margin-top: 2px;
+  animation: slideDown var(--t-base) var(--ease);
+}
+
 /* ---------- Drag & drop ---------- */
 .drag-handle {
   width: 14px;
