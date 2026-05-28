@@ -13,8 +13,10 @@ const DEFAULTS = {
   quickLinks: [],
   savedLinks: [],
   theme: 'dark',
-  customCategories: [],
+  taskCategories: [],
+  linkCategories: [],
   groupByCategory: false,
+  groupLinksByCategory: false,
 };
 
 async function readStore() {
@@ -77,8 +79,12 @@ function fileStorePlugin() {
                 : (Array.isArray(parsed.links) ? parsed.links : []),
               savedLinks: Array.isArray(parsed.savedLinks) ? parsed.savedLinks : [],
               theme: parsed.theme === 'light' ? 'light' : 'dark',
-              customCategories: Array.isArray(parsed.customCategories) ? parsed.customCategories : [],
+              taskCategories: Array.isArray(parsed.taskCategories)
+                ? parsed.taskCategories
+                : (Array.isArray(parsed.customCategories) ? parsed.customCategories : []),
+              linkCategories: Array.isArray(parsed.linkCategories) ? parsed.linkCategories : [],
               groupByCategory: !!parsed.groupByCategory,
+              groupLinksByCategory: !!parsed.groupLinksByCategory,
             };
             await writeStore(safe);
             res.statusCode = 204;

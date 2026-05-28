@@ -71,9 +71,40 @@ function applyData(state, data) {
   const quick = data.quickLinks ?? data.links ?? [];
   state.quickLinks.splice(0, state.quickLinks.length, ...quick);
   state.savedLinks.splice(0, state.savedLinks.length, ...(data.savedLinks || []));
-  state.customCategories.splice(0, state.customCategories.length, ...(data.customCategories || []));
+  // Tag datasets — tasks and links each get their own list.
+  // Legacy migration: when the new fields are empty but the old
+  // `customCategories` has content, fold it into taskCategories. Tags
+  // referenced by existing link items also mirror into linkCategories so
+  // already-tagged links keep rendering. Empty arrays from DEFAULTS don't
+  // count as "having new format" — that's why we check length, not presence.
+  const hasNewTags  = (data.taskCategories?.length || 0) + (data.linkCategories?.length || 0) > 0;
+  const hasLegacy   = (data.customCategories?.length || 0) > 0;
+  if (hasNewTags || !hasLegacy) {
+    state.taskCategories.splice(0, state.taskCategories.length, ...(data.taskCategories || []));
+    state.linkCategories.splice(0, state.linkCategories.length, ...(data.linkCategories || []));
+  } else {
+    state.taskCategories.splice(0, state.taskCategories.length, ...data.customCategories);
+    const usedByLinks = new Set();
+    state.quickLinks.forEach((l) => { if (l.category) usedByLinks.add(l.category); });
+    state.savedLinks.forEach((l) => { if (l.category) usedByLinks.add(l.category); });
+    // Give each link-side mirror a fresh ID so the two datasets stay fully
+    // independent — a future rename on the task side mustn't bleed into the
+    // link side via a shared ID.
+    const idMap = new Map();
+    const mirrored = data.customCategories
+      .filter((c) => usedByLinks.has(c.id))
+      .map((c, i) => {
+        const newId = `c-${Date.now().toString(36)}-${i}-${Math.floor(Math.random() * 100000)}`;
+        idMap.set(c.id, newId);
+        return { ...c, id: newId };
+      });
+    state.linkCategories.splice(0, state.linkCategories.length, ...mirrored);
+    state.quickLinks.forEach((l) => { if (l.category && idMap.has(l.category)) l.category = idMap.get(l.category); });
+    state.savedLinks.forEach((l) => { if (l.category && idMap.has(l.category)) l.category = idMap.get(l.category); });
+  }
   state.theme = data.theme === 'light' ? 'light' : 'dark';
   state.groupByCategory = !!data.groupByCategory;
+  state.groupLinksByCategory = !!data.groupLinksByCategory;
 }
 
 function isEmpty(data) {
@@ -86,7 +117,7 @@ function isEmpty(data) {
 }
 
 const store = {
-  state: { todos: [], archivedTodos: [], quickLinks: [], savedLinks: [], theme: 'dark', customCategories: [], groupByCategory: false },
+  state: { todos: [], archivedTodos: [], quickLinks: [], savedLinks: [], theme: 'dark', taskCategories: [], linkCategories: [], groupByCategory: false, groupLinksByCategory: false },
   _saveTimer: null,
   mode: 'local',          // 'file' | 'gist' | 'local'
   syncStatus: 'idle',     // 'idle' | 'syncing' | 'synced' | 'error'
@@ -173,7 +204,8 @@ let todos = store.state.todos;
 let archivedTodos = store.state.archivedTodos;
 let quickLinks = store.state.quickLinks;
 let savedLinks = store.state.savedLinks;
-let customCategories = store.state.customCategories;
+let taskCategories = store.state.taskCategories;
+let linkCategories = store.state.linkCategories;
 let quickQuery = '';
 let editingLinkId = null;
 let editingLinkKind = 'quick'; // 'quick' | 'saved' — which list the dialog is editing
@@ -274,11 +306,11 @@ function showToast(msg, action) {
 function hideToast() { toast.classList.remove('show'); }
 
 // =====================================================
-// CATEGORIES — color-coded tags for tasks
-//   Users create their own tags via the "+" button at the end of the chip row.
-//   They live in store.state.customCategories so they sync via gist. The
-//   selected chip does double duty: it filters the visible tasks AND becomes
-//   the default tag applied to newly-added tasks.
+// CATEGORIES — color-coded tags
+//   Two independent datasets: one for tasks, one for links. Each side has
+//   its own chip row and its own "+" button. IDs are globally unique
+//   (timestamp + random), so a single getCategory(id) lookup can resolve
+//   either set without ambiguity.
 // =====================================================
 
 // Palette offered when creating a tag.
@@ -287,8 +319,13 @@ const CATEGORY_PALETTE = [
   '#f0c75e', '#65c8c4', '#e87ab5', '#9b9ed4',
 ];
 
-function getAllCategories() { return customCategories; }
-function getCategory(id) { return id ? customCategories.find((c) => c.id === id) || null : null; }
+function getCategories(kind) { return kind === 'link' ? linkCategories : taskCategories; }
+function getCategory(id) {
+  if (!id) return null;
+  return taskCategories.find((c) => c.id === id)
+      || linkCategories.find((c) => c.id === id)
+      || null;
+}
 function hexToRgba(hex, alpha) {
   const v = hex.replace('#', '');
   const r = parseInt(v.slice(0, 2), 16);
@@ -297,16 +334,22 @@ function hexToRgba(hex, alpha) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-// Active chip: filters visible tasks (flat view) + becomes default tag for new tasks.
-let selectedCategoryId = null;
-// Grouped-view toggle — synced via store.state.groupByCategory. Updated from
-// the loaded state in init() and whenever the user toggles via the chip row.
-let groupByCategory = false;
+// Active chip per list: filters that list (flat view) + becomes default tag
+// for newly-added items. Mirrors selectedCategoryId for tasks and the link
+// equivalent for quick/saved links.
+let selectedCategoryId = null;        // tasks
+let selectedLinkCategoryId = null;    // quick + saved links (shared)
+// Grouped-view toggles per list — synced via store. Updated from the loaded
+// state in init() and whenever the user toggles via the chip row.
+let groupByCategory = false;          // tasks
+let groupLinksByCategory = false;     // quick links
 // Ephemeral per-session memory of which group headers the user collapsed.
-// Not persisted — every session starts with everything open.
+// Keys are prefixed by list ("task:" / "link:") so tasks and links don't
+// share collapse state for tags with the same id.
 const collapsedGroups = new Set();
 
-const categoryRow = $('#category-row');
+const categoryRow     = $('#category-row');
+const linkCategoryRow = $('#link-category-row');
 
 function applyCategoryVars(el, catId) {
   const cat = getCategory(catId);
@@ -331,29 +374,18 @@ function buildCategoryChip(cat, { selected, onClick }) {
   return chip;
 }
 
-function renderCategoryRow() {
-  if (!categoryRow) return;
-  categoryRow.innerHTML = '';
-
-  const onSelect = (id) => {
-    // Clicking a chip while grouped switches back to flat view, so the
-    // "filter" semantics of the chip kick in instead of just sitting unused.
-    if (groupByCategory) {
-      groupByCategory = false;
-      store.state.groupByCategory = false;
-    }
-    selectedCategoryId = selectedCategoryId === id ? null : id;
-    store.save();
-    renderCategoryRow();
-    renderTodos();
-  };
+// Generic chip-row renderer. Two callers (tasks + links) pass their own
+// selection/grouping state, the dataset kind, and the click handlers.
+function renderCategoryRow(container, opts) {
+  if (!container) return;
+  container.innerHTML = '';
 
   // Each chip is wrapped so it can carry a tiny × for deletion on hover
   // (a <button> inside another <button> would be invalid HTML).
-  getAllCategories().forEach((cat) => {
+  getCategories(opts.kind).forEach((cat) => {
     const chip = buildCategoryChip(cat, {
-      selected: selectedCategoryId === cat.id,
-      onClick: onSelect,
+      selected: opts.selectedId === cat.id,
+      onClick: opts.onSelectChip,
     });
     const wrap = document.createElement('span');
     wrap.className = 'category-chip-wrap';
@@ -365,46 +397,104 @@ function renderCategoryRow() {
     x.setAttribute('aria-label', `Delete ${cat.label} tag`);
     x.addEventListener('click', (e) => {
       e.stopPropagation();
-      deleteCategory(cat.id);
+      deleteCategory(cat.id, opts.kind);
     });
     wrap.append(chip, x);
-    categoryRow.appendChild(wrap);
+    container.appendChild(wrap);
   });
 
-  // Trailing "+" button — opens the create dialog
+  // Trailing "+" button — opens the create dialog for this dataset.
   const addBtn = document.createElement('button');
   addBtn.type = 'button';
   addBtn.className = 'category-add-btn';
   addBtn.title = 'Add a custom tag';
   addBtn.setAttribute('aria-label', 'Add a custom tag');
   addBtn.innerHTML = '+';
-  addBtn.addEventListener('click', openCreateCategoryDialog);
-  categoryRow.appendChild(addBtn);
+  addBtn.addEventListener('click', () => openCreateCategoryDialog(opts.kind));
+  container.appendChild(addBtn);
 
   // Group-by-tag toggle — sits next to the "+" button
   const groupBtn = document.createElement('button');
   groupBtn.type = 'button';
-  groupBtn.className = 'category-group-btn' + (groupByCategory ? ' is-active' : '');
-  const groupTitle = groupByCategory ? 'Switch to flat view' : 'Group by tag';
+  groupBtn.className = 'category-group-btn' + (opts.isGrouped ? ' is-active' : '');
+  const groupTitle = opts.isGrouped ? 'Switch to flat view' : 'Group by tag';
   groupBtn.title = groupTitle;
   groupBtn.setAttribute('aria-label', groupTitle);
-  groupBtn.setAttribute('aria-pressed', groupByCategory ? 'true' : 'false');
+  groupBtn.setAttribute('aria-pressed', opts.isGrouped ? 'true' : 'false');
   groupBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="4" cy="6" r="1.2" fill="currentColor"/><line x1="9" y1="6" x2="20" y2="6"/><circle cx="4" cy="12" r="1.2" fill="currentColor"/><line x1="9" y1="12" x2="20" y2="12"/><circle cx="4" cy="18" r="1.2" fill="currentColor"/><line x1="9" y1="18" x2="20" y2="18"/></svg>';
-  groupBtn.addEventListener('click', () => {
-    groupByCategory = !groupByCategory;
-    // Filter chip and grouped view are mutually exclusive — turning on
-    // grouping clears any active filter so the full grouped list shows.
-    if (groupByCategory) selectedCategoryId = null;
-    store.state.groupByCategory = groupByCategory;
-    store.save();
-    renderCategoryRow();
-    renderTodos();
-  });
-  categoryRow.appendChild(groupBtn);
+  groupBtn.addEventListener('click', opts.onToggleGroup);
+  container.appendChild(groupBtn);
 }
 
-function buildCategoryPill(todo, archived) {
-  const cat = getCategory(todo.category);
+function renderTaskCategoryRow() {
+  renderCategoryRow(categoryRow, {
+    kind: 'task',
+    selectedId: selectedCategoryId,
+    isGrouped: groupByCategory,
+    onSelectChip: (id) => {
+      // Filter & group are mutually exclusive: clicking a chip while grouped
+      // switches back to flat view so the filter semantics actually apply.
+      if (groupByCategory) {
+        groupByCategory = false;
+        store.state.groupByCategory = false;
+      }
+      selectedCategoryId = selectedCategoryId === id ? null : id;
+      store.save();
+      renderTaskCategoryRow();
+      renderTodos();
+    },
+    onToggleGroup: () => {
+      groupByCategory = !groupByCategory;
+      if (groupByCategory) selectedCategoryId = null;
+      store.state.groupByCategory = groupByCategory;
+      store.save();
+      renderTaskCategoryRow();
+      renderTodos();
+    },
+  });
+}
+
+function renderLinkCategoryRow() {
+  renderCategoryRow(linkCategoryRow, {
+    kind: 'link',
+    selectedId: selectedLinkCategoryId,
+    isGrouped: groupLinksByCategory,
+    onSelectChip: (id) => {
+      if (groupLinksByCategory) {
+        groupLinksByCategory = false;
+        store.state.groupLinksByCategory = false;
+      }
+      selectedLinkCategoryId = selectedLinkCategoryId === id ? null : id;
+      store.save();
+      renderLinkCategoryRow();
+      renderQuickLinks();
+      renderSavedLinks();
+    },
+    onToggleGroup: () => {
+      groupLinksByCategory = !groupLinksByCategory;
+      if (groupLinksByCategory) selectedLinkCategoryId = null;
+      store.state.groupLinksByCategory = groupLinksByCategory;
+      store.save();
+      renderLinkCategoryRow();
+      renderQuickLinks();
+      renderSavedLinks();
+    },
+  });
+}
+
+// Re-render both chip rows. Called when the shared tag list changes
+// (create / delete) so both sides stay in sync.
+function renderAllCategoryRows() {
+  renderTaskCategoryRow();
+  renderLinkCategoryRow();
+}
+
+// Build a colored-dot pill for any item that has an optional .category field.
+// The caller supplies the dataset `kind` (so the popover offers the right
+// tag set) and `onChange(newCategoryId | null)` which actually mutates the
+// item — keeps this helper agnostic to tasks vs. links.
+function buildCategoryPill(currentCategoryId, kind, onChange) {
+  const cat = getCategory(currentCategoryId);
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'category-pill' + (cat ? ' is-set' : '');
@@ -419,7 +509,7 @@ function buildCategoryPill(todo, archived) {
   btn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
-    openCategoryPopover(btn, todo.id, archived);
+    openCategoryPopover(btn, currentCategoryId, kind, onChange);
   });
   return btn;
 }
@@ -431,7 +521,68 @@ const categoryName         = $('#category-name');
 const colorSwatches        = $('#color-swatches');
 const categoryCancel       = $('#category-cancel');
 const categoryDialogClose  = $('#category-dialog-close');
+const categoryDialogTitle  = $('#category-dialog-title');
+const pickerPanel          = $('#color-picker-panel');
+const pickerSv             = $('#picker-sv');
+const pickerSvThumb        = $('#picker-sv-thumb');
+const pickerHue            = $('#picker-hue');
+const pickerHueThumb       = $('#picker-hue-thumb');
+const pickerPreview        = $('#picker-preview');
+const pickerHex            = $('#picker-hex');
 let pickedColor = CATEGORY_PALETTE[0];
+let pickerOpen  = false;
+// Picker keeps its own HSV state so hue is preserved across grayscale dips
+// (when value or saturation hits 0, hue would otherwise reset to red).
+const pickerHsv = { h: 215, s: 65, v: 100 };
+
+// --- Color conversions ---
+function _hexToRgb(hex) {
+  const v = hex.replace('#', '');
+  return {
+    r: parseInt(v.slice(0, 2), 16),
+    g: parseInt(v.slice(2, 4), 16),
+    b: parseInt(v.slice(4, 6), 16),
+  };
+}
+function _rgbToHex(r, g, b) {
+  const to = (n) => Math.round(Math.max(0, Math.min(255, n))).toString(16).padStart(2, '0');
+  return `#${to(r)}${to(g)}${to(b)}`;
+}
+function _rgbToHsv(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const d = max - min;
+  let h = 0;
+  const s = max === 0 ? 0 : d / max;
+  const v = max;
+  if (d !== 0) {
+    switch (max) {
+      case r: h = ((g - b) / d + (g < b ? 6 : 0)); break;
+      case g: h = ((b - r) / d + 2); break;
+      case b: h = ((r - g) / d + 4); break;
+    }
+    h *= 60;
+  }
+  return { h, s: s * 100, v: v * 100 };
+}
+function _hsvToRgb(h, s, v) {
+  s /= 100; v /= 100;
+  const c = v * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = v - c;
+  let r = 0, g = 0, b = 0;
+  if (h < 60)       { r = c; g = x; }
+  else if (h < 120) { r = x; g = c; }
+  else if (h < 180) { g = c; b = x; }
+  else if (h < 240) { g = x; b = c; }
+  else if (h < 300) { r = x; b = c; }
+  else              { r = c; b = x; }
+  return { r: (r + m) * 255, g: (g + m) * 255, b: (b + m) * 255 };
+}
+function hexToHsv(hex) { const { r, g, b } = _hexToRgb(hex); return _rgbToHsv(r, g, b); }
+function hsvToHex(h, s, v) { const { r, g, b } = _hsvToRgb(h, s, v); return _rgbToHex(r, g, b); }
+// Which dataset the dialog is currently creating into.
+let creatingCategoryKind = 'task';
 
 function renderColorSwatches() {
   colorSwatches.innerHTML = '';
@@ -445,15 +596,159 @@ function renderColorSwatches() {
     sw.setAttribute('aria-label', `Color ${color}`);
     sw.addEventListener('click', () => {
       pickedColor = color;
+      syncPickerFromHex(pickedColor);
+      setPickerOpen(false);
       renderColorSwatches();
     });
     colorSwatches.appendChild(sw);
   });
+
+  // Custom-color swatch: toggles the in-dialog color picker panel.
+  // Shows a rainbow gradient when no custom color is in use, or the picked
+  // color itself once the user has chosen one outside the preset palette.
+  const isCustom = !CATEGORY_PALETTE.includes(pickedColor);
+  const custom = document.createElement('button');
+  custom.type = 'button';
+  custom.className = 'color-swatch color-swatch-custom'
+    + (isCustom ? ' is-selected' : '')
+    + (pickerOpen ? ' is-open' : '');
+  if (isCustom) custom.style.background = pickedColor;
+  custom.setAttribute('role', 'radio');
+  custom.setAttribute('aria-checked', isCustom ? 'true' : 'false');
+  custom.setAttribute('aria-expanded', pickerOpen ? 'true' : 'false');
+  custom.setAttribute('aria-label', 'Pick a custom color');
+  custom.title = pickerOpen ? 'Close color picker' : 'Pick a custom color';
+  custom.addEventListener('click', () => {
+    setPickerOpen(!pickerOpen);
+    renderColorSwatches();
+  });
+  colorSwatches.appendChild(custom);
 }
 
-function openCreateCategoryDialog() {
+function setPickerOpen(open) {
+  pickerOpen = open;
+  pickerPanel.hidden = !open;
+  pickerPanel.classList.toggle('is-open', open);
+  if (open) {
+    syncPickerFromHex(pickedColor);
+    updatePickerVisuals();
+  }
+}
+
+// Copy HSV from hex, but preserve the existing hue when the hex is grayscale
+// (s === 0) — otherwise the hue thumb would snap to red when the user dips
+// into a black or gray.
+function syncPickerFromHex(hex) {
+  const { h, s, v } = hexToHsv(hex);
+  pickerHsv.s = s;
+  pickerHsv.v = v;
+  if (s > 0) pickerHsv.h = h;
+}
+
+function updatePickerVisuals() {
+  if (!pickerPanel) return;
+  const { h, s, v } = pickerHsv;
+  pickerSv.style.setProperty('--picker-hue', `${h}deg`);
+  pickerSvThumb.style.left = `${s}%`;
+  pickerSvThumb.style.top  = `${100 - v}%`;
+  pickerSvThumb.style.background = pickedColor;
+  pickerHueThumb.style.left = `${(h / 360) * 100}%`;
+  pickerHueThumb.style.background = `hsl(${h}, 100%, 50%)`;
+  pickerPreview.style.background = pickedColor;
+  pickerPreview.style.boxShadow = `0 0 0 4px ${hexToRgba(pickedColor, 0.22)}`;
+  if (document.activeElement !== pickerHex) {
+    pickerHex.value = pickedColor.toUpperCase();
+  }
+}
+
+// --- Picker pointer wiring ---
+function setHsv(partial) {
+  Object.assign(pickerHsv, partial);
+  pickedColor = hsvToHex(pickerHsv.h, pickerHsv.s, pickerHsv.v);
+  updatePickerVisuals();
+  // Re-render swatches so the custom rainbow swatch reflects the live color.
+  renderColorSwatches();
+}
+
+function svFromPointer(e) {
+  const rect = pickerSv.getBoundingClientRect();
+  const x = Math.max(0, Math.min(rect.width,  e.clientX - rect.left));
+  const y = Math.max(0, Math.min(rect.height, e.clientY - rect.top));
+  setHsv({ s: (x / rect.width) * 100, v: (1 - y / rect.height) * 100 });
+}
+function hueFromPointer(e) {
+  const rect = pickerHue.getBoundingClientRect();
+  const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+  setHsv({ h: (x / rect.width) * 360 });
+}
+
+function bindDrag(el, onMove) {
+  el.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    el.setPointerCapture(e.pointerId);
+    onMove(e);
+    const move = (ev) => onMove(ev);
+    const up = (ev) => {
+      el.removeEventListener('pointermove', move);
+      el.removeEventListener('pointerup', up);
+      el.removeEventListener('pointercancel', up);
+      try { el.releasePointerCapture(ev.pointerId); } catch {}
+    };
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+  });
+}
+bindDrag(pickerSv, svFromPointer);
+bindDrag(pickerHue, hueFromPointer);
+
+// Arrow-key nudges for accessibility — works when the slider is focused.
+pickerSv.addEventListener('keydown', (e) => {
+  const step = e.shiftKey ? 10 : 2;
+  let { s, v } = pickerHsv;
+  if (e.key === 'ArrowLeft')  s = Math.max(0,   s - step);
+  else if (e.key === 'ArrowRight') s = Math.min(100, s + step);
+  else if (e.key === 'ArrowUp')    v = Math.min(100, v + step);
+  else if (e.key === 'ArrowDown')  v = Math.max(0,   v - step);
+  else return;
+  e.preventDefault();
+  setHsv({ s, v });
+});
+pickerHue.addEventListener('keydown', (e) => {
+  const step = e.shiftKey ? 30 : 6;
+  let { h } = pickerHsv;
+  if (e.key === 'ArrowLeft')  h = (h - step + 360) % 360;
+  else if (e.key === 'ArrowRight') h = (h + step) % 360;
+  else return;
+  e.preventDefault();
+  setHsv({ h });
+});
+
+// Hex input — only applies when the typed value is a valid 6-digit hex.
+pickerHex.addEventListener('input', (e) => {
+  let v = e.target.value.trim();
+  if (v.startsWith('#')) v = v.slice(1);
+  if (!/^[0-9a-fA-F]{6}$/.test(v)) return;
+  pickedColor = `#${v.toLowerCase()}`;
+  syncPickerFromHex(pickedColor);
+  updatePickerVisuals();
+  renderColorSwatches();
+});
+pickerHex.addEventListener('blur', () => {
+  // Snap back to the canonical color string if the user left an invalid
+  // partial value in the input.
+  pickerHex.value = pickedColor.toUpperCase();
+});
+
+function openCreateCategoryDialog(kind = 'task') {
+  creatingCategoryKind = kind === 'link' ? 'link' : 'task';
   pickedColor = CATEGORY_PALETTE[0];
   categoryName.value = '';
+  if (categoryDialogTitle) {
+    categoryDialogTitle.textContent = creatingCategoryKind === 'link' ? 'New link tag' : 'New task tag';
+  }
+  setPickerOpen(false);
+  syncPickerFromHex(pickedColor);
   renderColorSwatches();
   if (typeof categoryDialog.showModal === 'function') categoryDialog.showModal();
   else categoryDialog.setAttribute('open', '');
@@ -461,6 +756,7 @@ function openCreateCategoryDialog() {
 }
 function closeCreateCategoryDialog() {
   if (categoryDialog.open) categoryDialog.close();
+  setPickerOpen(false);
 }
 
 categoryForm.addEventListener('submit', (e) => {
@@ -468,13 +764,15 @@ categoryForm.addEventListener('submit', (e) => {
   const label = categoryName.value.trim();
   if (!label) return;
   const id = `c-${Date.now().toString(36)}-${Math.floor(Math.random() * 1000)}`;
-  customCategories.push({
+  getCategories(creatingCategoryKind).push({
     id, label,
     color: pickedColor,
     soft: hexToRgba(pickedColor, 0.16),
   });
   store.save();
-  renderCategoryRow();
+  // Only the affected row needs to repaint, but both is cheap and keeps the
+  // two sides obviously in sync after the dialog closes.
+  renderAllCategoryRows();
   closeCreateCategoryDialog();
 });
 categoryCancel.addEventListener('click', closeCreateCategoryDialog);
@@ -483,34 +781,44 @@ categoryDialog.addEventListener('click', (e) => {
   if (e.target === categoryDialog) closeCreateCategoryDialog();
 });
 
-function deleteCategory(id) {
-  const cat = getCategory(id);
-  if (!cat) return;
-  const idx = customCategories.findIndex((c) => c.id === id);
+function deleteCategory(id, kind) {
+  const list = getCategories(kind);
+  const idx = list.findIndex((c) => c.id === id);
   if (idx < 0) return;
+  const cat = list[idx];
 
-  // Capture for undo: the category object + any tasks pointing at it.
-  const affectedActive  = todos.filter((t) => t.category === id);
-  const affectedArchive = archivedTodos.filter((t) => t.category === id);
-  const wasFiltering    = selectedCategoryId === id;
+  // Capture for undo. Each dataset only touches its own item lists since
+  // task tags and link tags are independent.
+  const isTask = kind === 'task';
+  const affectedA = isTask ? todos.filter((t) => t.category === id) : quickLinks.filter((l) => l.category === id);
+  const affectedB = isTask ? archivedTodos.filter((t) => t.category === id) : savedLinks.filter((l) => l.category === id);
+  const wasFiltering = isTask
+    ? selectedCategoryId === id
+    : selectedLinkCategoryId === id;
 
-  customCategories.splice(idx, 1);
-  affectedActive.forEach((t) => { delete t.category; });
-  affectedArchive.forEach((t) => { delete t.category; });
-  if (wasFiltering) selectedCategoryId = null;
+  list.splice(idx, 1);
+  [...affectedA, ...affectedB].forEach((item) => { delete item.category; });
+  if (wasFiltering) {
+    if (isTask) selectedCategoryId = null;
+    else selectedLinkCategoryId = null;
+  }
 
   store.save();
-  renderCategoryRow();
-  renderTodos();
+  renderAllCategoryRows();
+  if (isTask) renderTodos();
+  else { renderQuickLinks(); renderSavedLinks(); }
 
   showToast(`Tag "${cat.label}" deleted`, { label: 'Undo', fn: () => {
-    customCategories.splice(idx, 0, cat);
-    affectedActive.forEach((t) => { t.category = id; });
-    affectedArchive.forEach((t) => { t.category = id; });
-    if (wasFiltering) selectedCategoryId = id;
+    list.splice(idx, 0, cat);
+    [...affectedA, ...affectedB].forEach((item) => { item.category = id; });
+    if (wasFiltering) {
+      if (isTask) selectedCategoryId = id;
+      else selectedLinkCategoryId = id;
+    }
     store.save();
-    renderCategoryRow();
-    renderTodos();
+    renderAllCategoryRows();
+    if (isTask) renderTodos();
+    else { renderQuickLinks(); renderSavedLinks(); }
   }});
 }
 
@@ -533,39 +841,39 @@ function popoverEscape(e) {
   if (e.key === 'Escape') { e.stopPropagation(); closeCategoryPopover(); }
 }
 
-function openCategoryPopover(triggerEl, todoId, archived) {
+function openCategoryPopover(triggerEl, currentCatId, kind, onChange) {
   closeCategoryPopover();
-  const currentCat = getTodoCategory(todoId, archived);
 
   const pop = document.createElement('div');
   pop.className = 'category-popover';
   pop.setAttribute('role', 'menu');
 
-  const cats = getAllCategories();
+  const cats = getCategories(kind);
   cats.forEach((cat) => {
     pop.appendChild(buildCategoryChip(cat, {
-      selected: currentCat === cat.id,
+      selected: currentCatId === cat.id,
       onClick: (id) => {
-        const next = currentCat === id ? null : id;
-        setTodoCategory(todoId, next, archived);
+        const next = currentCatId === id ? null : id;
+        onChange(next);
         closeCategoryPopover();
       },
     }));
   });
 
-  if (currentCat) {
+  if (currentCatId) {
     const clearBtn = document.createElement('button');
     clearBtn.type = 'button';
     clearBtn.className = 'category-chip category-clear';
     clearBtn.innerHTML = '<span>Clear</span>';
     clearBtn.addEventListener('click', () => {
-      setTodoCategory(todoId, null, archived);
+      onChange(null);
       closeCategoryPopover();
     });
     pop.appendChild(clearBtn);
   }
 
-  // No tags defined yet — offer to create one so the popover isn't a dead end.
+  // No tags defined for this dataset yet — offer to create one so the
+  // popover isn't a dead end.
   if (cats.length === 0) {
     const create = document.createElement('button');
     create.type = 'button';
@@ -573,7 +881,7 @@ function openCategoryPopover(triggerEl, todoId, archived) {
     create.innerHTML = '<span>+ New tag</span>';
     create.addEventListener('click', () => {
       closeCategoryPopover();
-      openCreateCategoryDialog();
+      openCreateCategoryDialog(kind);
     });
     pop.appendChild(create);
   }
@@ -633,9 +941,7 @@ function buildTodoItem(todo, { archived = false } = {}) {
   const li = document.createElement('li');
   li.className = `todo-item${todo.done ? ' completed' : ''}`;
   li.dataset.id = todo.id;
-  // Grouped view: disable drag — cross-group drops would snap back since
-  // group placement is derived from the task's category, not array order.
-  li.draggable = !(groupByCategory && !archived);
+  li.draggable = true;
 
   const handle = document.createElement('span');
   handle.className = 'drag-handle';
@@ -668,7 +974,9 @@ function buildTodoItem(todo, { archived = false } = {}) {
   }
   actions.appendChild(makeBtn('trash', 'Delete', () => deleteTodo(todo.id, archived), 'danger'));
 
-  const pill = buildCategoryPill(todo, archived);
+  const pill = buildCategoryPill(todo.category, 'task', (newCat) => {
+    setTodoCategory(todo.id, newCat, archived);
+  });
 
   li.append(handle, cb, span, pill, actions);
   return li;
@@ -759,7 +1067,7 @@ function renderGroupedTodos() {
     buckets.get(key).push(t);
   });
 
-  customCategories.forEach((cat) => {
+  taskCategories.forEach((cat) => {
     const items = buckets.get(cat.id);
     if (items && items.length) todoList.appendChild(buildTaskGroup(cat, items));
   });
@@ -770,7 +1078,7 @@ function renderGroupedTodos() {
 function buildTaskGroup(cat, items) {
   const details = document.createElement('details');
   details.className = 'task-group';
-  const key = cat ? cat.id : '__untagged__';
+  const key = `task:${cat ? cat.id : '__untagged__'}`;
   details.open = !collapsedGroups.has(key);
   details.addEventListener('toggle', () => {
     if (details.open) collapsedGroups.delete(key);
@@ -880,31 +1188,70 @@ function renderFor(kind) {
   else renderQuickLinks();
 }
 
+function setLinkCategory(id, category, kind) {
+  const arr = listFor(kind);
+  const link = arr.find((l) => l.id === id);
+  if (!link) return;
+  if (category) link.category = category;
+  else delete link.category;
+  saveLinks();
+  renderFor(kind);
+}
+
+// Compose search and category filter. The category-filter half is skipped
+// in grouped view since grouped mode shows the full list bucketed by tag.
 function filteredQuickLinks() {
-  if (!quickQuery) return quickLinks;
-  const q = quickQuery.toLowerCase();
-  return quickLinks.filter(l =>
-    l.title.toLowerCase().includes(q) ||
-    l.url.toLowerCase().includes(q)
-  );
+  let arr = quickLinks;
+  if (!groupLinksByCategory && selectedLinkCategoryId) {
+    arr = arr.filter((l) => l.category === selectedLinkCategoryId);
+  }
+  if (quickQuery) {
+    const q = quickQuery.toLowerCase();
+    arr = arr.filter((l) =>
+      l.title.toLowerCase().includes(q) ||
+      l.url.toLowerCase().includes(q)
+    );
+  }
+  return arr;
+}
+function filteredSavedLinks() {
+  if (!selectedLinkCategoryId || groupLinksByCategory) return savedLinks;
+  return savedLinks.filter((l) => l.category === selectedLinkCategoryId);
 }
 
 // --- Quick Links: tile grid ---
 function renderQuickLinks() {
   quickGrid.innerHTML = '';
+  const filterCat = getCategory(selectedLinkCategoryId);
+  // Filter only applies in flat view; grouped view ignores it.
+  const filtering = !groupLinksByCategory && !!filterCat;
+
   const visible = filteredQuickLinks();
+  const totalQuick = quickLinks.length;
 
-  quickMeta.textContent = quickLinks.length
-    ? (quickQuery ? `${visible.length} of ${quickLinks.length}` : `${quickLinks.length} saved`)
-    : '';
+  // Meta string — mirrors the task panel's three modes (group / filter / plain).
+  if (groupLinksByCategory && totalQuick > 0) {
+    quickMeta.textContent = `${totalQuick} saved · grouped`;
+  } else if (filtering || quickQuery) {
+    const parts = [`${visible.length} of ${totalQuick}`];
+    if (filtering) parts.push(filterCat.label);
+    quickMeta.textContent = parts.join(' · ');
+  } else {
+    quickMeta.textContent = totalQuick ? `${totalQuick} saved` : '';
+  }
 
-  quickEmpty.classList.toggle('hidden', quickLinks.length > 0);
-  if (quickLinks.length === 0) return;
+  quickEmpty.classList.toggle('hidden', totalQuick > 0);
+  if (totalQuick === 0) return;
+
+  if (groupLinksByCategory) {
+    renderGroupedQuickLinks();
+    return;
+  }
 
   visible.forEach((link) => quickGrid.appendChild(buildLinkTile(link, 'quick')));
 
-  // Trailing "add" tile (only when not searching)
-  if (!quickQuery) {
+  // Trailing "add" tile — only when we're browsing the unfiltered, unsearched list.
+  if (!quickQuery && !filtering) {
     const add = document.createElement('button');
     add.type = 'button';
     add.className = 'link-tile link-tile-add';
@@ -913,7 +1260,50 @@ function renderQuickLinks() {
     quickGrid.appendChild(add);
   }
 
-  if (visible.length === 0 && quickQuery) {
+  if (visible.length === 0 && (quickQuery || filtering)) {
+    const note = document.createElement('p');
+    note.className = 'empty-state';
+    note.style.gridColumn = '1 / -1';
+    let title;
+    if (quickQuery && filtering) {
+      title = `No quick links match "${escapeHtml(quickQuery)}" in ${escapeHtml(filterCat.label)}`;
+    } else if (quickQuery) {
+      title = `No quick links match "${escapeHtml(quickQuery)}"`;
+    } else {
+      title = `No "${escapeHtml(filterCat.label)}" quick links`;
+    }
+    note.innerHTML = `<span class="empty-icon">·</span><span class="empty-title">${title}</span>`;
+    quickGrid.appendChild(note);
+  }
+}
+
+// Grouped Quick Links: collapsible section per tag, plus "Untagged" last.
+// Search still applies (composes inside each bucket).
+function renderGroupedQuickLinks() {
+  const baseList = quickQuery
+    ? quickLinks.filter((l) => {
+        const q = quickQuery.toLowerCase();
+        return l.title.toLowerCase().includes(q) || l.url.toLowerCase().includes(q);
+      })
+    : quickLinks;
+
+  const buckets = new Map();
+  baseList.forEach((l) => {
+    const key = getCategory(l.category) ? l.category : '__untagged__';
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(l);
+  });
+
+  linkCategories.forEach((cat) => {
+    const items = buckets.get(cat.id);
+    if (items && items.length) quickGrid.appendChild(buildLinkGroup(cat, items, 'quick'));
+  });
+  const untagged = buckets.get('__untagged__');
+  if (untagged && untagged.length) {
+    quickGrid.appendChild(buildLinkGroup(null, untagged, 'quick'));
+  }
+
+  if (quickGrid.childElementCount === 0 && quickQuery) {
     const note = document.createElement('p');
     note.className = 'empty-state';
     note.style.gridColumn = '1 / -1';
@@ -922,17 +1312,49 @@ function renderQuickLinks() {
   }
 }
 
+function buildLinkGroup(cat, items, kind) {
+  const details = document.createElement('details');
+  details.className = 'link-group';
+  const key = `link-${kind}:${cat ? cat.id : '__untagged__'}`;
+  details.open = !collapsedGroups.has(key);
+  details.addEventListener('toggle', () => {
+    if (details.open) collapsedGroups.delete(key);
+    else collapsedGroups.add(key);
+  });
+
+  const summary = document.createElement('summary');
+  summary.className = 'task-group-summary';
+  if (cat) summary.style.setProperty('--cat-color', cat.color);
+  summary.innerHTML = `
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="archive-caret" aria-hidden="true"><polyline points="9 6 15 12 9 18"/></svg>
+    <span class="task-group-dot"></span>
+    <span class="task-group-label">${escapeHtml(cat ? cat.label : 'Untagged')}</span>
+    <span class="task-group-count">${items.length}</span>
+  `;
+
+  const grid = document.createElement('div');
+  grid.className = kind === 'saved' ? 'link-grid link-grid-saved' : 'link-grid';
+  items.forEach((link) => grid.appendChild(buildLinkTile(link, kind)));
+
+  details.append(summary, grid);
+  return details;
+}
+
 // --- Saved for Later: same tile grid, lives inside a collapsible <details> ---
 function renderSavedLinks() {
   savedGrid.innerHTML = '';
-  if (savedLinks.length === 0) {
+  const visible = filteredSavedLinks();
+  // Hide the saved-archive entirely when there's nothing to show under the
+  // current filter — keeps the panel quiet when filtering by a tag with no
+  // saved entries.
+  if (visible.length === 0) {
     savedArchive.hidden = true;
     savedArchive.open = false;
     return;
   }
   savedArchive.hidden = false;
-  savedCount.textContent = savedLinks.length;
-  savedLinks.forEach((link) => savedGrid.appendChild(buildLinkTile(link, 'saved')));
+  savedCount.textContent = visible.length;
+  visible.forEach((link) => savedGrid.appendChild(buildLinkTile(link, 'saved')));
 }
 
 // Single tile factory for both lists. Action set varies by kind:
@@ -945,7 +1367,9 @@ function buildLinkTile(link, kind = 'quick') {
   tile.target = '_blank';
   tile.rel = 'noopener noreferrer';
   tile.dataset.id = link.id;
-  // Drag-to-reorder only makes sense in the unfiltered list — disable quick tiles while searching.
+  // Drag-to-reorder is allowed in flat, filtered, and grouped views.
+  // Search still disables it for quick tiles, since the user is in a
+  // transient lookup mode and reorder semantics get confusing.
   tile.draggable = kind === 'quick' ? !quickQuery : true;
 
   // Favicon
@@ -1012,7 +1436,13 @@ function buildLinkTile(link, kind = 'quick') {
     deleteLink(link.id, kind);
   }, 'danger'));
 
-  tile.append(actions, faviconWrap, info);
+  // Colored-dot pill in the top-left corner — clicking opens the tag popover.
+  const pill = buildCategoryPill(link.category, 'link', (newCat) => {
+    setLinkCategory(link.id, newCat, kind);
+  });
+  pill.classList.add('link-category-pill');
+
+  tile.append(actions, pill, faviconWrap, info);
   return tile;
 }
 
@@ -1415,8 +1845,9 @@ function reorderInList(list, fromId, toId, pos) {
  * @param {'y'|'x'} opts.axis                 - Direction used to decide before/after.
  * @param {() => void} opts.onChange          - Called after a successful reorder (persist + render).
  */
-function setupDnd({ container, itemSelector, getList, axis, onChange }) {
+function setupDnd({ container, itemSelector, groupSelector, getList, axis, onChange }) {
   let draggingId = null;
+  let draggingGroup = null; // the .task-group / .link-group the source belongs to (if grouped)
   let currentTarget = null;
   let currentPos = null;
 
@@ -1432,6 +1863,7 @@ function setupDnd({ container, itemSelector, getList, axis, onChange }) {
     clearIndicators();
     container.querySelectorAll('.dragging').forEach((el) => el.classList.remove('dragging'));
     draggingId = null;
+    draggingGroup = null;
   }
 
   container.addEventListener('dragstart', (e) => {
@@ -1439,6 +1871,9 @@ function setupDnd({ container, itemSelector, getList, axis, onChange }) {
     if (!item || !container.contains(item)) return;
     if (item.draggable === false) return;
     draggingId = item.dataset.id;
+    // Capture the source group (if any) so dragover can constrain drops
+    // to within the same group. Skipped when no groupSelector is provided.
+    draggingGroup = groupSelector ? item.closest(groupSelector) : null;
     // Defer adding the class so the browser captures the drag image first
     requestAnimationFrame(() => item.classList.add('dragging'));
     e.dataTransfer.effectAllowed = 'move';
@@ -1449,6 +1884,12 @@ function setupDnd({ container, itemSelector, getList, axis, onChange }) {
     if (!draggingId) return;
     const target = e.target.closest(itemSelector);
     if (!target || !container.contains(target)) return;
+    // Same-group constraint: in grouped mode, ignore targets in a different
+    // group so cross-group drops are silently rejected (no indicator, no drop).
+    if (draggingGroup) {
+      const targetGroup = target.closest(groupSelector);
+      if (targetGroup !== draggingGroup) { clearIndicators(); return; }
+    }
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     if (target.dataset.id === draggingId) { clearIndicators(); return; }
@@ -1486,6 +1927,7 @@ function setupDnd({ container, itemSelector, getList, axis, onChange }) {
 setupDnd({
   container: todoList,
   itemSelector: '.todo-item',
+  groupSelector: '.task-group', // same-group constraint kicks in only when grouped
   getList: () => todos,
   axis: 'y',
   onChange: () => { saveTodos(); renderTodos(); },
@@ -1500,6 +1942,7 @@ setupDnd({
 setupDnd({
   container: quickGrid,
   itemSelector: '.link-tile:not(.link-tile-add)',
+  groupSelector: '.link-group',
   getList: () => quickLinks,
   axis: 'x',
   onChange: () => { saveLinks(); renderQuickLinks(); },
@@ -1516,9 +1959,10 @@ setupDnd({
 async function init() {
   await store.load();
   document.documentElement.setAttribute('data-theme', store.state.theme);
-  groupByCategory = !!store.state.groupByCategory;
+  groupByCategory      = !!store.state.groupByCategory;
+  groupLinksByCategory = !!store.state.groupLinksByCategory;
   updateHeader();
-  renderCategoryRow();
+  renderAllCategoryRows();
   renderTodos();
   renderQuickLinks();
   renderSavedLinks();

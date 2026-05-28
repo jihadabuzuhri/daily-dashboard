@@ -104,6 +104,8 @@
           </div>
         </div>
 
+        <div class="category-row" id="link-category-row" role="toolbar" aria-label="Tag for quick links"></div>
+
         <div class="link-grid" id="quick-grid"></div>
         <p class="empty-state" id="quick-empty">
           <span class="empty-icon">·</span>
@@ -202,6 +204,18 @@
         <div class="field">
           <span class="field-label">Color</span>
           <div class="color-swatches" id="color-swatches" role="radiogroup" aria-label="Tag color"></div>
+          <div class="color-picker-panel" id="color-picker-panel" hidden>
+            <div class="picker-sv" id="picker-sv" role="slider" aria-label="Saturation and value" tabindex="0">
+              <div class="picker-sv-thumb" id="picker-sv-thumb"></div>
+            </div>
+            <div class="picker-hue" id="picker-hue" role="slider" aria-label="Hue" tabindex="0">
+              <div class="picker-hue-thumb" id="picker-hue-thumb"></div>
+            </div>
+            <div class="picker-foot">
+              <div class="picker-preview" id="picker-preview" aria-hidden="true"></div>
+              <input type="text" id="picker-hex" class="picker-hex" maxlength="7" autocomplete="off" spellcheck="false" aria-label="Hex color" />
+            </div>
+          </div>
         </div>
         <footer class="edit-footer">
           <button type="button" class="btn-ghost" id="category-cancel">Cancel</button>

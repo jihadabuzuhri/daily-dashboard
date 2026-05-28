@@ -724,6 +724,141 @@ body {
   box-shadow: 0 0 0 2px var(--text);
 }
 
+/* Custom-color swatch: toggles the in-dialog picker panel. Rainbow gradient
+   by default; inline background (from JS) takes over once the user has
+   picked a non-preset color. The is-open state shows a focus ring to hint
+   that the panel below is currently expanded. */
+.color-swatch-custom {
+  background: conic-gradient(from 90deg,
+    #ec8a76, #f0c75e, #6ec694, #65c8c4,
+    #5a9eff, #c193e0, #e87ab5, #ec8a76);
+}
+.color-swatch-custom.is-open {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.color-swatch-custom.is-open.is-selected {
+  /* When both selected AND open, layer both rings (selected uses text;
+     open uses accent), with accent outer so the "open" cue dominates. */
+  box-shadow: 0 0 0 2px var(--text), 0 0 0 4px var(--accent-soft);
+}
+
+/* ---------- Custom color picker ----------
+   Saturation/value 2D area + horizontal hue strip + hex input. Replaces
+   the OS-native <input type="color"> dropdown for visual consistency. */
+.color-picker-panel {
+  display: none;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 14px;
+  padding: 14px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+}
+.color-picker-panel.is-open {
+  display: flex;
+  animation: slideDown var(--t-base) var(--ease);
+}
+
+/* 2D saturation × value area. Background uses two stacked gradients:
+   horizontal (white → hue) for saturation, then vertical (transparent → black)
+   for value. Hue plugs in via the --picker-hue CSS var set by JS. */
+.picker-sv {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 10px;
+  background:
+    linear-gradient(to top, #000, transparent),
+    linear-gradient(to right, #fff, hsl(var(--picker-hue, 215deg) 100% 50%));
+  cursor: crosshair;
+  touch-action: none;
+  outline: none;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+.picker-sv:focus-visible {
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08), 0 0 0 3px var(--accent-soft);
+}
+.picker-sv-thumb {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.25);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  transition: transform var(--t-fast) var(--ease);
+}
+.picker-sv:active .picker-sv-thumb { transform: translate(-50%, -50%) scale(1.15); }
+
+/* Hue strip — fixed full-spectrum gradient, the thumb rides along it. */
+.picker-hue {
+  position: relative;
+  height: 14px;
+  border-radius: 99px;
+  background: linear-gradient(90deg,
+    hsl(0,   100%, 50%), hsl(60,  100%, 50%), hsl(120, 100%, 50%),
+    hsl(180, 100%, 50%), hsl(240, 100%, 50%), hsl(300, 100%, 50%),
+    hsl(360, 100%, 50%));
+  cursor: ew-resize;
+  touch-action: none;
+  outline: none;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+.picker-hue:focus-visible {
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08), 0 0 0 3px var(--accent-soft);
+}
+.picker-hue-thumb {
+  position: absolute;
+  top: 50%;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.25);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  transition: transform var(--t-fast) var(--ease);
+}
+.picker-hue:active .picker-hue-thumb { transform: translate(-50%, -50%) scale(1.1); }
+
+.picker-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.picker-preview {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #888;
+  border: 1px solid var(--border-soft);
+  flex-shrink: 0;
+  transition: background var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
+}
+.picker-hex {
+  flex: 1;
+  background: var(--bg-soft);
+  border: 1px solid var(--border-soft);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  outline: none;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  transition: border-color var(--t-fast) var(--ease),
+              background var(--t-fast) var(--ease),
+              box-shadow var(--t-fast) var(--ease);
+}
+.picker-hex:focus {
+  border-color: var(--accent);
+  background: var(--surface);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
 /* Grouped task view — each tag becomes a collapsible <details> section.
    Visuals mirror the archive disclosure pattern, with a colored dot in the
    summary instead of a label-only header. */
@@ -771,6 +906,39 @@ body {
 }
 .task-group-list {
   margin-top: 2px;
+  animation: slideDown var(--t-base) var(--ease);
+}
+
+/* Link tiles: pill rides in the top-left corner mirroring how the action
+   buttons sit in the top-right. Same visual language as the task pill. */
+.link-category-pill {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 2;
+}
+.link-category-pill:not(.is-set) {
+  /* Slightly more visible by default on tiles than on todo items, since
+     tile rows aren't always hovered. Faint outline; pop on hover. */
+  opacity: 0;
+}
+.link-tile:hover .link-category-pill:not(.is-set) {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Grouped link view — sits inside the .link-grid (which is grid-display).
+   The group itself spans the full row, with its own inner grid for tiles. */
+.link-group {
+  grid-column: 1 / -1;
+}
+.link-group + .link-group {
+  margin-top: 6px;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 6px;
+}
+.link-group > .link-grid {
+  margin-top: 6px;
   animation: slideDown var(--t-base) var(--ease);
 }
 
