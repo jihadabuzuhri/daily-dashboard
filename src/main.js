@@ -1978,7 +1978,15 @@ init();
  * and scrub any "null"/"undefined" values that get injected.
  */
 function guardPlaceholders() {
-  const inputs = [todoInput, quickSearch].filter(Boolean);
+  // Top-level inputs that are always in the DOM, plus the inputs inside
+  // every dialog — extensions like to mangle these whenever a <dialog>
+  // opens/closes.
+  const inputs = [
+    todoInput, quickSearch,
+    editTitle, editUrl,
+    syncGistId, syncToken,
+    categoryName, pickerHex,
+  ].filter(Boolean);
   const original = new Map(inputs.map((el) => [el, el.getAttribute('placeholder') || '']));
 
   const isJunk = (v) => v === 'null' || v === 'undefined';
@@ -2000,10 +2008,12 @@ function guardPlaceholders() {
   inputs.forEach((el) => obs.observe(el, { attributes: true, attributeFilter: ['placeholder', 'value'] }));
 
   // Also scrub right after dialogs open/close, which is when extensions
-  // typically scan the DOM.
-  [editDialog, syncDialog].filter(Boolean).forEach((dlg) => {
-    dlg.addEventListener('close', () => inputs.forEach(sanitize));
-    dlg.addEventListener('toggle', () => inputs.forEach(sanitize));
+  // typically scan the DOM. The scrub is deferred a tick so it runs after
+  // whatever the extension does in the same event loop.
+  const scrub = () => requestAnimationFrame(() => inputs.forEach(sanitize));
+  [editDialog, syncDialog, categoryDialog, installDialog].filter(Boolean).forEach((dlg) => {
+    dlg.addEventListener('close', scrub);
+    dlg.addEventListener('toggle', scrub);
   });
 }
 
