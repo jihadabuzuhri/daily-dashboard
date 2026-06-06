@@ -61,6 +61,7 @@
         <form class="add-task" id="todo-form">
           <svg class="add-task-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
           <input type="text" id="todo-input" placeholder="Add a task" autocomplete="off" />
+          <button type="button" id="task-tag-pill" class="add-task-tag" aria-label="Tag for new task"></button>
           <kbd class="add-task-kbd" aria-hidden="true">N</kbd>
         </form>
 
@@ -238,6 +239,10 @@
           <span class="field-label">URL</span>
           <input type="url" id="edit-url" placeholder="https://example.com" autocomplete="off" required />
         </label>
+        <div class="field">
+          <span class="field-label">Tag</span>
+          <button type="button" id="edit-tag-pill" class="form-tag-pill" aria-label="Tag for link"></button>
+        </div>
         <footer class="edit-footer">
           <button type="button" class="btn-ghost" id="edit-cancel">Cancel</button>
           <button type="submit" class="btn-primary" id="edit-save">Save</button>

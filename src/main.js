@@ -247,6 +247,8 @@ const editCancel    = $('#edit-cancel');
 const editClose     = $('#edit-dialog-close');
 const editDialogTitle = $('#edit-dialog-title');
 const editSaveBtn   = $('#edit-save');
+const taskTagPill   = $('#task-tag-pill');
+const linkTagPill   = $('#edit-tag-pill');
 
 const syncBtn       = $('#sync-btn');
 const syncPip       = $('#sync-pip');
@@ -439,6 +441,8 @@ function renderTaskCategoryRow() {
         store.state.groupByCategory = false;
       }
       selectedCategoryId = selectedCategoryId === id ? null : id;
+      pendingTaskCategoryId = selectedCategoryId;
+      syncTaskTagPill();
       store.save();
       renderTaskCategoryRow();
       renderTodos();
@@ -802,6 +806,13 @@ function deleteCategory(id, kind) {
     if (isTask) selectedCategoryId = null;
     else selectedLinkCategoryId = null;
   }
+  if (isTask && pendingTaskCategoryId === id) {
+    pendingTaskCategoryId = null;
+    syncTaskTagPill();
+  } else if (!isTask && pendingLinkCategoryId === id) {
+    pendingLinkCategoryId = null;
+    syncLinkTagPill();
+  }
 
   store.save();
   renderAllCategoryRows();
@@ -887,11 +898,16 @@ function openCategoryPopover(triggerEl, currentCatId, kind, onChange) {
   }
 
   // Mount, measure, then position. Use fixed coords anchored to the trigger.
+  // When the trigger lives inside a <dialog> that's open via showModal(), the
+  // dialog is in the top layer — appending to <body> would render the popover
+  // *below* the modal. Mount inside the dialog in that case so we share the
+  // top-layer stacking context.
   pop.style.position = 'fixed';
   pop.style.visibility = 'hidden';
   pop.style.top = '0';
   pop.style.left = '0';
-  document.body.appendChild(pop);
+  const modalAncestor = triggerEl.closest('dialog[open]');
+  (modalAncestor || document.body).appendChild(pop);
   activePopover = pop;
 
   const rect = triggerEl.getBoundingClientRect();
@@ -915,6 +931,54 @@ function openCategoryPopover(triggerEl, currentCatId, kind, onChange) {
     window.addEventListener('scroll', closeCategoryPopover, true);
   }, 0);
 }
+
+// --- Form tag pills ---
+// Pending tag for the next task / next link submission. Default-synced from
+// the active filter chip so newly-added items stay visible under that filter;
+// the user can override per-submission by clicking the pill.
+let pendingTaskCategoryId = null;
+let pendingLinkCategoryId = null;
+
+// Compact dot pill, used inline in the task input. Dashed circle when empty,
+// solid colored dot with a soft halo when set — same visual language as the
+// per-task category pill on existing items.
+function syncTaskTagPill() {
+  const cat = getCategory(pendingTaskCategoryId);
+  applyCategoryVars(taskTagPill, pendingTaskCategoryId);
+  taskTagPill.classList.toggle('is-set', !!cat);
+  taskTagPill.title = cat ? `Tag: ${cat.label} — click to change` : 'Add a tag';
+  taskTagPill.setAttribute('aria-label', cat ? `Tag: ${cat.label}` : 'Add a tag for new task');
+}
+// Labeled chip, used inside the link dialog where there's space + a field label.
+function syncLinkTagPill() {
+  const cat = getCategory(pendingLinkCategoryId);
+  applyCategoryVars(linkTagPill, pendingLinkCategoryId);
+  linkTagPill.innerHTML = '';
+  if (cat) {
+    linkTagPill.classList.add('is-set');
+    linkTagPill.title = `Tag: ${cat.label} — click to change`;
+    linkTagPill.innerHTML = `<span class="form-tag-dot"></span><span class="form-tag-label">${escapeHtml(cat.label)}</span>`;
+  } else {
+    linkTagPill.classList.remove('is-set');
+    linkTagPill.title = 'Add a tag';
+    linkTagPill.innerHTML = '<span class="form-tag-label">+ Tag</span>';
+  }
+}
+
+taskTagPill.addEventListener('click', (e) => {
+  e.preventDefault();
+  openCategoryPopover(taskTagPill, pendingTaskCategoryId, 'task', (next) => {
+    pendingTaskCategoryId = next;
+    syncTaskTagPill();
+  });
+});
+linkTagPill.addEventListener('click', (e) => {
+  e.preventDefault();
+  openCategoryPopover(linkTagPill, pendingLinkCategoryId, 'link', (next) => {
+    pendingLinkCategoryId = next;
+    syncLinkTagPill();
+  });
+});
 
 function getTodoCategory(id, archived) {
   const arr = archived ? archivedTodos : todos;
@@ -1105,7 +1169,7 @@ function buildTaskGroup(cat, items) {
 
 function addTodo(text) {
   const todo = { id: Date.now() + Math.random(), text, done: false };
-  if (selectedCategoryId) todo.category = selectedCategoryId;
+  if (pendingTaskCategoryId) todo.category = pendingTaskCategoryId;
   todos.unshift(todo);
   saveTodos(); renderTodos();
 }
@@ -1159,6 +1223,9 @@ todoForm.addEventListener('submit', (e) => {
   if (!text) return;
   addTodo(text);
   todoInput.value = '';
+  // Reset the pill back to the active filter so the next task defaults sensibly.
+  pendingTaskCategoryId = selectedCategoryId;
+  syncTaskTagPill();
 });
 
 // =====================================================
@@ -1501,6 +1568,9 @@ function openAddLinkDialog() {
   editSaveBtn.textContent = 'Add';
   editTitle.value = '';
   editUrl.value = '';
+  // Default to the active link filter so new links stay visible under it.
+  pendingLinkCategoryId = selectedLinkCategoryId;
+  syncLinkTagPill();
   showLinkDialog();
 }
 function openEditLinkDialog(id, kind) {
@@ -1512,6 +1582,8 @@ function openEditLinkDialog(id, kind) {
   editSaveBtn.textContent = 'Save';
   editTitle.value = link.title;
   editUrl.value = link.url;
+  pendingLinkCategoryId = link.category || null;
+  syncLinkTagPill();
   showLinkDialog();
   requestAnimationFrame(() => editTitle.select());
 }
@@ -1538,12 +1610,16 @@ editForm.addEventListener('submit', (e) => {
   const arr = listFor(editingLinkKind);
   if (editingLinkId == null) {
     // Add mode — always quick (saved entries come from saveForLater)
-    arr.push({ id: Date.now() + Math.random(), title, url });
+    const link = { id: Date.now() + Math.random(), title, url };
+    if (pendingLinkCategoryId) link.category = pendingLinkCategoryId;
+    arr.push(link);
   } else {
     const link = arr.find(l => l.id === editingLinkId);
     if (!link) { closeLinkDialog(); return; }
     link.title = title;
     link.url = url;
+    if (pendingLinkCategoryId) link.category = pendingLinkCategoryId;
+    else delete link.category;
   }
   saveLinks();
   renderFor(editingLinkKind);
@@ -1963,6 +2039,8 @@ async function init() {
   groupLinksByCategory = !!store.state.groupLinksByCategory;
   updateHeader();
   renderAllCategoryRows();
+  syncTaskTagPill();
+  syncLinkTagPill();
   renderTodos();
   renderQuickLinks();
   renderSavedLinks();

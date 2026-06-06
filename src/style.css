@@ -401,6 +401,76 @@ body {
   flex-shrink: 0;
   transition: opacity var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
 }
+/* Compact dot pill in the task input — mirrors the per-task .category-pill so
+   adding a tag feels identical to changing an existing item's tag. Dashed
+   empty state, solid dot + soft halo when set. */
+.add-task-tag {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1.5px dashed var(--border);
+  background: transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+  align-self: center;
+  transition: all var(--t-fast) var(--ease);
+}
+.add-task-tag:hover {
+  border-style: solid;
+  border-color: var(--text-muted);
+  transform: scale(1.12);
+}
+.add-task-tag.is-set {
+  background: var(--cat-color);
+  border: none;
+  box-shadow: 0 0 0 3px var(--cat-soft);
+}
+.add-task-tag.is-set:hover { box-shadow: 0 0 0 4px var(--cat-soft); }
+
+/* Labeled chip pill — used inside the link dialog where the form has a field
+   label and room for the tag name. */
+.form-tag-pill {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  flex-shrink: 0;
+  white-space: nowrap;
+  max-width: 220px;
+  overflow: hidden;
+  transition: all var(--t-fast) var(--ease);
+}
+.form-tag-pill:hover {
+  border-style: solid;
+  border-color: var(--text-muted);
+  color: var(--text);
+}
+.form-tag-pill.is-set {
+  border: 1px solid transparent;
+  background: var(--cat-soft);
+  color: var(--cat-color);
+  box-shadow: 0 0 0 1px var(--cat-soft);
+}
+.form-tag-pill.is-set:hover { filter: brightness(1.08); }
+.form-tag-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--cat-color);
+  flex-shrink: 0;
+}
+.form-tag-label { overflow: hidden; text-overflow: ellipsis; }
+
 .add-task:focus-within .add-task-kbd {
   opacity: 0;
   transform: translateX(4px);
