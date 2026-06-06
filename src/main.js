@@ -268,10 +268,13 @@ const installDialog    = $('#install-dialog');
 const installDialogClose = $('#install-dialog-close');
 
 // --- Date + greeting ---
+// The greeting copy ("Good morning", weekday names) is authored in English, so
+// pin the date formatter to en-US too — otherwise an Arabic / French / etc.
+// browser locale would render a date in that script next to English text.
 function updateHeader() {
   const now = new Date();
   const opts = { weekday: 'long', month: 'long', day: 'numeric' };
-  dateEl.textContent = now.toLocaleDateString(undefined, opts);
+  dateEl.textContent = now.toLocaleDateString('en-US', opts);
   const h = now.getHours();
   const period = h < 5 ? 'night' : h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening';
   greetingEl.innerHTML = `Good <em>${period}</em>.`;
