@@ -394,6 +394,12 @@ function renderCategoryRow(container, opts) {
     });
     const wrap = document.createElement('span');
     wrap.className = 'category-chip-wrap';
+    // Make the wrap draggable so users can reorder tags in place. The setupDnd
+    // helper reads dataset.id to identify items; reordering the backing array
+    // also reorders the grouped view (renderGroupedTodos / renderGroupedQuickLinks
+    // iterate taskCategories / linkCategories in array order).
+    wrap.draggable = true;
+    wrap.dataset.id = cat.id;
     const x = document.createElement('button');
     x.type = 'button';
     x.className = 'category-chip-delete';
@@ -2032,6 +2038,24 @@ setupDnd({
   getList: () => savedLinks,
   axis: 'x',
   onChange: () => { saveLinks(); renderSavedLinks(); },
+});
+
+// Chip rows — drag a tag to reorder. The backing arrays (taskCategories /
+// linkCategories) drive both the chip-row order AND the order of sections in
+// the grouped-by-tag view, so reordering here reflects in both places.
+setupDnd({
+  container: categoryRow,
+  itemSelector: '.category-chip-wrap',
+  getList: () => taskCategories,
+  axis: 'x',
+  onChange: () => { store.save(); renderTaskCategoryRow(); renderTodos(); },
+});
+setupDnd({
+  container: linkCategoryRow,
+  itemSelector: '.category-chip-wrap',
+  getList: () => linkCategories,
+  axis: 'x',
+  onChange: () => { store.save(); renderLinkCategoryRow(); renderQuickLinks(); renderSavedLinks(); },
 });
 
 // --- Init ---

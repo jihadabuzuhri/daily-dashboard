@@ -738,11 +738,23 @@ body {
   color: var(--accent);
 }
 
-/* Custom chip wrapper holds the chip + a tiny × visible on hover */
+/* Custom chip wrapper holds the chip + a tiny × visible on hover.
+   draggable=true is set in JS so users can drag-to-reorder tags. */
 .category-chip-wrap {
   position: relative;
   display: inline-flex;
+  cursor: grab;
+  transition: opacity var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
 }
+.category-chip-wrap:active { cursor: grabbing; }
+.category-chip-wrap.dragging {
+  opacity: 0.4;
+  cursor: grabbing;
+}
+/* Drop indicators — vertical bar before/after the target chip, matching the
+   horizontal axis of the chip row. */
+.category-chip-wrap.drop-before { box-shadow: -2px 0 0 0 var(--accent); }
+.category-chip-wrap.drop-after  { box-shadow:  2px 0 0 0 var(--accent); }
 .category-chip-delete {
   position: absolute;
   top: -6px;
