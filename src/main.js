@@ -1009,6 +1009,236 @@ function setTodoCategory(id, category, archived) {
 }
 
 // =====================================================
+// FOCUS / POMODORO (POC — in-memory only, not persisted)
+// =====================================================
+// Single-session model: at most one task is being focused on at any time.
+// State carries the source task id, the timestamp it ends at, the total
+// duration, and the live progress (0..1) used for the ring + bar.
+let focusSession      = null;   // { taskId, endsAt, durationMs, progress }
+let focusTicker       = null;   // setInterval handle
+let pendingFocusTaskId = null;  // task selected for focus while the picker is open
+let pickedDurationMin  = 25;    // currently-selected duration in the picker
+
+const FOCUS_DURATION_MS = 25 * 60 * 1000;
+const FOCUS_PRESETS_MIN = [15, 25, 50];
+const FOCUS_MIN_MIN = 1;
+const FOCUS_MAX_MIN = 180;
+
+const focusPill       = $('#focus-pill');
+const focusPillTask   = $('#focus-pill-task');
+const focusPillTime   = $('#focus-pill-time');
+const focusPillStop   = $('#focus-pill-stop');
+const focusPillProg   = focusPill?.querySelector('.focus-pill-progress');
+
+const focusDialog        = $('#focus-dialog');
+const focusDialogTask    = $('#focus-dialog-task');
+const focusDialogEyebrow = $('#focus-dialog-eyebrow');
+const focusDialogTime    = $('#focus-dialog-time');
+const focusDialogSub     = $('#focus-dialog-sub');
+const focusDialogFill    = focusDialog?.querySelector('.focus-ring-fill');
+const focusDialogClose   = $('#focus-dialog-close');
+const focusDialogMin     = $('#focus-dialog-minimize');
+const focusDialogStop    = $('#focus-dialog-stop');
+const focusDialogStart   = $('#focus-dialog-start');
+const focusPicker        = $('#focus-picker');
+const focusPickerCustom  = $('#focus-picker-custom');
+
+focusPillStop?.addEventListener('click', () => stopFocus('cancelled'));
+focusPill?.addEventListener('click', (e) => {
+  if (e.target.closest('.focus-pill-stop')) return; // stop has its own handler
+  openFocusDialog();
+});
+focusDialogClose?.addEventListener('click', closeFocusDialog);
+focusDialogMin?.addEventListener('click', closeFocusDialog);
+focusDialogStop?.addEventListener('click', () => { closeFocusDialog(); stopFocus('cancelled'); });
+// Click outside the inner card dismisses (minimize / cancel picker)
+focusDialog?.addEventListener('click', (e) => { if (e.target === focusDialog) closeFocusDialog(); });
+
+// Picker chip clicks → set picked duration and clear the custom field.
+focusPicker?.querySelectorAll('.focus-picker-chip').forEach((chip) => {
+  chip.addEventListener('click', () => {
+    pickedDurationMin = Number(chip.dataset.min);
+    if (focusPickerCustom) focusPickerCustom.value = '';
+    syncFocusPickerUI();
+  });
+});
+// Typing in the custom field overrides the preset selection (when valid).
+focusPickerCustom?.addEventListener('input', () => {
+  const n = Number(focusPickerCustom.value);
+  if (Number.isFinite(n) && n >= FOCUS_MIN_MIN && n <= FOCUS_MAX_MIN) {
+    pickedDurationMin = n;
+    syncFocusPickerUI();
+  }
+});
+focusPickerCustom?.addEventListener('blur', () => {
+  // Clamp on blur — empty string just means "use preset"; out-of-range snaps in.
+  const raw = focusPickerCustom.value.trim();
+  if (raw === '') { syncFocusPickerUI(); return; }
+  const n = Math.min(FOCUS_MAX_MIN, Math.max(FOCUS_MIN_MIN, Math.round(Number(raw) || pickedDurationMin)));
+  focusPickerCustom.value = n;
+  pickedDurationMin = n;
+  syncFocusPickerUI();
+});
+focusDialogStart?.addEventListener('click', () => {
+  if (pendingFocusTaskId == null) return;
+  const id = pendingFocusTaskId;
+  pendingFocusTaskId = null;
+  startFocus(id, pickedDurationMin);
+});
+
+function syncFocusPickerUI() {
+  // Highlight whichever preset matches the current pickedDurationMin (if any).
+  // When the custom input holds a value matching no preset, none are selected.
+  if (!focusPicker) return;
+  const customRaw = focusPickerCustom?.value.trim();
+  const usingCustom = customRaw !== '' && Number(customRaw) === pickedDurationMin && !FOCUS_PRESETS_MIN.includes(pickedDurationMin);
+  focusPicker.querySelectorAll('.focus-picker-chip').forEach((chip) => {
+    const isSel = !usingCustom && Number(chip.dataset.min) === pickedDurationMin;
+    chip.classList.toggle('is-selected', isSel);
+    chip.setAttribute('aria-checked', isSel ? 'true' : 'false');
+  });
+  // The custom-pill border lights up when the active value lives in it.
+  const customWrap = focusPicker.querySelector('.focus-picker-custom');
+  customWrap?.classList.toggle('is-selected', usingCustom);
+}
+
+// Opens the dialog with the duration picker (no timer started). Called from
+// the play button on a task.
+function openFocusPicker(taskId) {
+  if (!focusDialog) return;
+  pendingFocusTaskId = taskId;
+  pickedDurationMin = 25;
+  if (focusPickerCustom) focusPickerCustom.value = '';
+  focusDialog.classList.remove('is-running');
+  if (focusDialogEyebrow) focusDialogEyebrow.textContent = 'READY TO FOCUS';
+  if (focusDialogTask) focusDialogTask.textContent = findTodoText(taskId) || 'Task';
+  syncFocusPickerUI();
+  if (!focusDialog.open) {
+    if (typeof focusDialog.showModal === 'function') focusDialog.showModal();
+    else focusDialog.setAttribute('open', '');
+  }
+  // Defer focus so the dialog has time to animate in.
+  requestAnimationFrame(() => focusDialogStart?.focus());
+}
+
+// Opens the dialog in running state — used when minimizing then re-expanding.
+function openFocusDialog() {
+  if (!focusSession || !focusDialog) return;
+  focusDialog.classList.add('is-running');
+  if (focusDialogEyebrow) focusDialogEyebrow.textContent = 'FOCUSING ON';
+  if (!focusDialog.open) {
+    if (typeof focusDialog.showModal === 'function') focusDialog.showModal();
+    else focusDialog.setAttribute('open', '');
+  }
+  tickFocus(); // paint immediately
+}
+function closeFocusDialog() {
+  pendingFocusTaskId = null;
+  if (focusDialog?.open) focusDialog.close();
+}
+
+function startFocus(taskId, durationMin = 25) {
+  const safeMin = Math.min(FOCUS_MAX_MIN, Math.max(FOCUS_MIN_MIN, Math.round(Number(durationMin) || 25)));
+  const durationMs = safeMin * 60 * 1000;
+  // Switching mid-session: silently replace; no toast spam.
+  const now = Date.now();
+  focusSession = {
+    taskId,
+    endsAt: now + durationMs,
+    durationMs,
+    progress: 0,
+  };
+  if (focusTicker) clearInterval(focusTicker);
+  focusTicker = setInterval(tickFocus, 1000);
+  tickFocus();           // immediate paint so the UI doesn't lag a beat
+  renderTodos();         // re-render so play→stop swap + progress fill appear
+  openFocusDialog();     // switch the dialog from picker → running view
+}
+
+function stopFocus(reason) {
+  if (!focusSession) return;
+  if (focusTicker) { clearInterval(focusTicker); focusTicker = null; }
+  const taskText = findTodoText(focusSession.taskId);
+  focusSession = null;
+  focusPill.hidden = true;
+  closeFocusDialog();
+  if (reason === 'done') {
+    playFocusChime();
+    showToast(`Focus done — ${taskText || 'task'}`, {
+      label: 'Restart',
+      fn: () => { const id = findTodoIdByText(taskText); if (id) startFocus(id); },
+    });
+  }
+  renderTodos();
+}
+
+function tickFocus() {
+  if (!focusSession) return;
+  const remainingMs = focusSession.endsAt - Date.now();
+  if (remainingMs <= 0) { stopFocus('done'); return; }
+  focusSession.progress = 1 - (remainingMs / focusSession.durationMs);
+  const taskText = findTodoText(focusSession.taskId) || 'Task';
+  const mmss = formatMmSs(remainingMs);
+  const remainingMin = Math.ceil(remainingMs / 60000);
+  const pct = focusSession.progress * 100;
+
+  // Header pill (compact view)
+  focusPill.hidden = false;
+  focusPillTask.textContent = taskText;
+  focusPillTime.textContent = mmss;
+  if (focusPillProg) focusPillProg.style.strokeDasharray = `${pct} 100`;
+
+  // Expanded dialog (only paints if it's open / built)
+  if (focusDialogTask) {
+    focusDialogTask.textContent = taskText;
+    focusDialogTime.textContent = mmss;
+    focusDialogSub.textContent  = `${remainingMin} minute${remainingMin === 1 ? '' : 's'} left`;
+    if (focusDialogFill) focusDialogFill.style.strokeDasharray = `${pct} 100`;
+  }
+
+  // Live progress fill under the active task — cheap inline style write.
+  const li = document.querySelector(`.todo-item.is-focusing[data-id="${focusSession.taskId}"]`);
+  if (li) {
+    const fill = li.querySelector('.todo-focus-fill');
+    if (fill) fill.style.setProperty('--focus-progress', `${pct}%`);
+  }
+}
+
+function formatMmSs(ms) {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+function findTodoText(id) { return todos.find((t) => t.id === id)?.text || ''; }
+function findTodoIdByText(text) { return todos.find((t) => t.text === text)?.id; }
+
+// Two-note completion chime via Web Audio. Lazy-instantiated so the AudioContext
+// only spins up after a user gesture (browsers block autoplay otherwise).
+let _audioCtx = null;
+function playFocusChime() {
+  try {
+    _audioCtx = _audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = _audioCtx;
+    const now = ctx.currentTime;
+    [880, 660].forEach((freq, i) => {
+      const t = now + i * 0.18;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(0.22, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + 0.5);
+    });
+  } catch { /* audio is non-essential; silent failure is fine */ }
+}
+
+// =====================================================
 // TODOS
 // =====================================================
 // All persisted state lives in store.state; the arrays here are references,
@@ -1056,7 +1286,36 @@ function buildTodoItem(todo, { archived = false } = {}) {
     setTodoCategory(todo.id, newCat, archived);
   });
 
-  li.append(handle, cb, span, pill, actions);
+  // Focus button — its own slot between the tag pill and the destructive
+  // actions. Click on the active task re-opens the focus dialog instead of
+  // toggling stop, since stopping should be a deliberate gesture from inside
+  // the dialog.
+  let focusBtn = null;
+  if (!archived) {
+    const isActiveFocus = focusSession && focusSession.taskId === todo.id;
+    focusBtn = document.createElement('button');
+    focusBtn.type = 'button';
+    focusBtn.className = 'task-focus-btn' + (isActiveFocus ? ' is-on' : '');
+    focusBtn.title = isActiveFocus ? 'Open focus session' : 'Start 25-min focus';
+    focusBtn.setAttribute('aria-label', focusBtn.title);
+    focusBtn.innerHTML = isActiveFocus ? ICONS.stop : ICONS.play;
+    focusBtn.addEventListener('click', () => {
+      if (focusSession && focusSession.taskId === todo.id) openFocusDialog();
+      else openFocusPicker(todo.id);
+    });
+  }
+
+  if (focusBtn) li.append(handle, cb, span, pill, focusBtn, actions);
+  else          li.append(handle, cb, span, pill, actions);
+
+  // Visual: when this is the active focus task, draw a progress fill underneath.
+  if (!archived && focusSession && focusSession.taskId === todo.id) {
+    li.classList.add('is-focusing');
+    const fill = document.createElement('span');
+    fill.className = 'todo-focus-fill';
+    fill.style.setProperty('--focus-progress', `${focusSession.progress * 100}%`);
+    li.appendChild(fill);
+  }
   return li;
 }
 
@@ -1632,6 +1891,8 @@ const ICONS = {
   bookmark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>',
   restore:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><polyline points="3 4 3 10 9 10"/></svg>',
   grip:     '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>',
+  play:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><path d="M10.2 8.2l5.8 3.8-5.8 3.8z" fill="currentColor" stroke="none"/></svg>',
+  stop:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><rect x="9" y="9" width="6" height="6" rx="1" fill="currentColor" stroke="none"/></svg>',
 };
 
 // --- Link dialog (shared for add to Quick + edit in either list) ---

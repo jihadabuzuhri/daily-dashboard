@@ -165,6 +165,458 @@ body {
   gap: 10px;
 }
 
+/* ===== Focus / Pomodoro POC ===== */
+.focus-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 6px 6px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  box-shadow: var(--shadow-sm);
+  max-width: 320px;
+}
+.focus-pill[hidden] { display: none; }
+.focus-pill-ring {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+}
+.focus-pill-ring svg {
+  width: 100%; height: 100%;
+  transform: rotate(-90deg); /* progress starts at the top */
+}
+.focus-pill-track {
+  stroke: var(--border);
+}
+.focus-pill-progress {
+  stroke: var(--accent);
+  stroke-linecap: round;
+  stroke-dasharray: 0 100;
+  transition: stroke-dasharray 1s linear;
+}
+.focus-pill-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+  min-width: 0;
+}
+.focus-pill-task {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
+}
+.focus-pill-time {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.02em;
+}
+.focus-pill-stop {
+  width: 26px; height: 26px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all var(--t-fast) var(--ease);
+}
+.focus-pill-stop svg { width: 14px; height: 14px; }
+.focus-pill-stop:hover {
+  background: var(--danger);
+  color: var(--bg);
+}
+
+/* Dedicated focus button — sits between the tag pill and the action icons.
+   Visible only on hover (like the action icons), accent-tinted always, with a
+   gentle scale-on-hover. When the session is running on this task, the button
+   stays visible and pulses softly to draw the eye back to it. */
+.task-focus-btn {
+  width: 26px; height: 26px;
+  padding: 0;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
+  opacity: 0;
+  transform: scale(0.85);
+  transition: opacity var(--t-fast) var(--ease),
+              transform var(--t-fast) var(--ease),
+              background var(--t-fast) var(--ease);
+}
+.task-focus-btn svg { width: 18px; height: 18px; }
+.todo-item:hover .task-focus-btn,
+.todo-item:focus-within .task-focus-btn,
+.task-focus-btn.is-on {
+  opacity: 1;
+  transform: scale(1);
+}
+.task-focus-btn:hover {
+  background: var(--accent-soft);
+  transform: scale(1.08);
+}
+.task-focus-btn.is-on {
+  background: var(--accent-soft);
+  animation: focusBtnPulse 2.6s var(--ease) infinite;
+}
+@keyframes focusBtnPulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--accent-soft); }
+  50%      { box-shadow: 0 0 0 6px transparent; }
+}
+
+/* Active focus task — slim progress bar across the bottom + faint accent tint. */
+.todo-item.is-focusing {
+  background: linear-gradient(to right, var(--accent-soft) 0%, transparent 60%);
+}
+.todo-focus-fill {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 2px;
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  background: linear-gradient(to right, var(--accent) var(--focus-progress, 0%), transparent var(--focus-progress, 0%));
+  transition: background 1s linear;
+  pointer-events: none;
+}
+
+/* ===== Focus modal — large centered card with blurred backdrop ===== */
+.focus-dialog {
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: auto;
+  max-width: 480px;
+  width: calc(100% - 32px);
+  color: var(--text);
+  overflow: visible;
+  /* Scoped accent — warmer and more saturated than the global one, giving the
+     focus session its own identity without changing the rest of the app. */
+  --accent:        #e9954b;
+  --accent-soft:   rgba(233, 149, 75, 0.18);
+  --focus-accent-1: #f3b069;
+  --focus-accent-2: #d96f4b;
+}
+[data-theme="light"] .focus-dialog {
+  --accent:        #c97a3f;
+  --accent-soft:   rgba(201, 122, 63, 0.14);
+}
+.focus-dialog::backdrop {
+  background: rgba(8, 8, 10, 0.30);
+  backdrop-filter: blur(8px) saturate(115%);
+  -webkit-backdrop-filter: blur(8px) saturate(115%);
+  animation: focusBackdropIn 280ms var(--ease);
+}
+[data-theme="light"] .focus-dialog::backdrop {
+  background: rgba(40, 32, 20, 0.22);
+}
+@keyframes focusBackdropIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.focus-dialog[open] .focus-dialog-inner {
+  animation: focusDialogIn 360ms var(--ease-spring);
+}
+@keyframes focusDialogIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0)   scale(1); }
+}
+
+.focus-dialog-inner {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 48px 40px 32px;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 28px;
+  box-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.5);
+}
+.focus-dialog-close {
+  position: absolute;
+  top: 14px; right: 14px;
+  width: 32px; height: 32px;
+  display: grid; place-items: center;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--t-fast) var(--ease);
+}
+.focus-dialog-close:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.focus-dialog-close svg { width: 18px; height: 18px; }
+
+.focus-dialog-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  color: var(--text-muted);
+  margin: 0 0 6px;
+}
+.focus-dialog-task {
+  margin: 0 0 32px;
+  font-family: var(--font-serif, var(--font-body));
+  font-size: 26px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  text-align: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.focus-ring-wrap {
+  position: relative;
+  width: 280px;
+  height: 280px;
+  display: grid; place-items: center;
+}
+.focus-ring-aura {
+  position: absolute;
+  inset: 12px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--accent-soft) 0%, transparent 70%);
+  filter: blur(28px);
+  opacity: 0.85;
+  animation: focusAuraBreathe 4.5s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes focusAuraBreathe {
+  0%, 100% { transform: scale(1);    opacity: 0.65; }
+  50%      { transform: scale(1.06); opacity: 0.95; }
+}
+.focus-ring {
+  position: absolute;
+  inset: 0;
+  width: 100%; height: 100%;
+  transform: rotate(-90deg); /* start the ring at 12 o'clock */
+}
+.focus-ring-track {
+  stroke: var(--border);
+  opacity: 0.55;
+}
+.focus-ring-fill {
+  /* Stroked with the SVG gradient defined inline in the markup — stops are
+     coloured via the rule below so they stay theme-able. Falls back to the
+     solid accent if the gradient ID isn't resolved. */
+  stroke: url(#focusRingGradient);
+  stroke-dasharray: 0 100;
+  transition: stroke-dasharray 1s linear;
+  filter: drop-shadow(0 0 8px var(--accent-soft));
+}
+/* The SVG <stop> elements use stop-color attributes that don't accept CSS
+   variables — drive them with CSS rules instead so they honour the dialog's
+   scoped accent. */
+#focusRingGradient stop:nth-child(1) { stop-color: var(--focus-accent-1, var(--accent)); }
+#focusRingGradient stop:nth-child(2) { stop-color: var(--focus-accent-2, var(--accent)); }
+.focus-ring-center {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.focus-ring-time {
+  font-family: var(--font-mono);
+  font-size: 58px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.focus-ring-sub {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* ===== Duration picker (pre-start state) =====
+   The dialog has two visual states: picker (no session yet) and running (timer
+   in flight). A single `.is-running` flag on the dialog toggles which UI is
+   visible. */
+.focus-picker {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 8px;
+  padding: 20px 8px;
+  width: 100%;
+  max-width: 320px;
+}
+.focus-dialog.is-running .focus-picker { display: none; }
+.focus-dialog:not(.is-running) .focus-ring-wrap { display: none; }
+
+.focus-picker-chip {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  padding: 0;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: all var(--t-fast) var(--ease);
+}
+.focus-picker-chip span {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.focus-picker-chip:hover {
+  border-color: var(--text-muted);
+  transform: translateY(-1px);
+}
+.focus-picker-chip.is-selected {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+  box-shadow: 0 6px 18px -8px var(--accent);
+}
+.focus-picker-chip.is-selected span { color: var(--bg); opacity: 0.8; }
+
+.focus-picker-custom {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 64px;
+  padding: 0 14px;
+  border-radius: 18px;
+  border: 1px dashed var(--border);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  transition: all var(--t-fast) var(--ease);
+}
+.focus-picker-custom:hover { border-color: var(--text-muted); color: var(--text); }
+.focus-picker-custom:focus-within {
+  border-style: solid;
+  border-color: var(--accent);
+  color: var(--text);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.focus-picker-custom.is-selected {
+  border-style: solid;
+  border-color: var(--accent);
+  color: var(--text);
+}
+.focus-picker-custom input {
+  width: 38px;
+  background: transparent;
+  border: none;
+  outline: none;
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--text);
+  text-align: center;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.focus-picker-custom input::-webkit-outer-spin-button,
+.focus-picker-custom input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.focus-picker-custom input::placeholder { color: var(--text-faint); }
+.focus-picker-custom span {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* Action rows — show one per state. Dual-class selectors beat the base
+   `.focus-dialog-actions { display: flex }` rule defined further below. */
+.focus-dialog-actions.focus-actions-picker  { display: flex; }
+.focus-dialog-actions.focus-actions-running { display: none; }
+.focus-dialog.is-running .focus-dialog-actions.focus-actions-picker  { display: none; }
+.focus-dialog.is-running .focus-dialog-actions.focus-actions-running { display: flex; }
+
+/* Primary "Start session" button — bold accent CTA. */
+.focus-dialog-start {
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 12px 32px;
+  border-radius: 999px;
+  border: none;
+  background: var(--accent);
+  color: var(--bg);
+  cursor: pointer;
+  box-shadow: 0 8px 24px -10px var(--accent);
+  transition: all var(--t-fast) var(--ease);
+}
+.focus-dialog-start:hover { transform: translateY(-1px); filter: brightness(1.05); }
+.focus-dialog-start:active { transform: translateY(0); }
+
+.focus-dialog-actions {
+  margin-top: 24px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.focus-dialog-minimize,
+.focus-dialog-stop {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 10px 18px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all var(--t-fast) var(--ease);
+}
+.focus-dialog-minimize {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+}
+.focus-dialog-minimize:hover {
+  border-color: var(--text-muted);
+  color: var(--text);
+}
+.focus-dialog-stop {
+  border: 1px solid transparent;
+  background: var(--surface-2);
+  color: var(--text);
+}
+.focus-dialog-stop:hover {
+  background: var(--danger);
+  color: var(--bg);
+}
+
 /* Theme toggle */
 .theme-toggle {
   position: relative;
