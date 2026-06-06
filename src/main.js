@@ -1117,12 +1117,21 @@ function renderTodos() {
     visibleTodos.forEach((todo) => todoList.appendChild(buildTodoItem(todo)));
   }
 
-  // Archive — flat (not grouped), filtered if a filter is active.
-  const archivedVisibleCount = filtering ? visibleArchived.length : archivedTodos.length;
+  // Archive — follows the same mode as the active list. Grouped mode here uses
+  // the full archive (filter is implicit in the bucketing), so the count reflects
+  // archivedTodos.length when grouped instead of the filtered subset.
+  const groupedArchive = groupByCategory && archivedTodos.length > 0;
+  const archivedVisibleCount = groupedArchive
+    ? archivedTodos.length
+    : (filtering ? visibleArchived.length : archivedTodos.length);
   if (archivedVisibleCount > 0) {
     archiveEl.hidden = false;
     archiveCount.textContent = archivedVisibleCount;
-    visibleArchived.forEach((todo) => archiveList.appendChild(buildTodoItem(todo, { archived: true })));
+    if (groupedArchive) {
+      renderGroupedArchive();
+    } else {
+      visibleArchived.forEach((todo) => archiveList.appendChild(buildTodoItem(todo, { archived: true })));
+    }
   } else {
     archiveEl.hidden = true;
     archiveEl.open = false;
@@ -1148,10 +1157,31 @@ function renderGroupedTodos() {
   if (untagged && untagged.length) todoList.appendChild(buildTaskGroup(null, untagged));
 }
 
-function buildTaskGroup(cat, items) {
+// Grouped archive: same layout as active todos, but feeds archivedTodos and
+// passes { archived: true } to buildTodoItem so the action buttons differ.
+function renderGroupedArchive() {
+  const buckets = new Map();
+  archivedTodos.forEach((t) => {
+    const key = getCategory(t.category) ? t.category : '__untagged__';
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(t);
+  });
+
+  taskCategories.forEach((cat) => {
+    const items = buckets.get(cat.id);
+    if (items && items.length) archiveList.appendChild(buildTaskGroup(cat, items, { archived: true }));
+  });
+  const untagged = buckets.get('__untagged__');
+  if (untagged && untagged.length) archiveList.appendChild(buildTaskGroup(null, untagged, { archived: true }));
+}
+
+function buildTaskGroup(cat, items, { archived = false } = {}) {
   const details = document.createElement('details');
   details.className = 'task-group';
-  const key = `task:${cat ? cat.id : '__untagged__'}`;
+  // Prefix the collapse key so the same tag's section in active vs. archive
+  // doesn't share open/closed state.
+  const prefix = archived ? 'archive' : 'task';
+  const key = `${prefix}:${cat ? cat.id : '__untagged__'}`;
   details.open = !collapsedGroups.has(key);
   details.addEventListener('toggle', () => {
     if (details.open) collapsedGroups.delete(key);
@@ -1170,7 +1200,7 @@ function buildTaskGroup(cat, items) {
 
   const ul = document.createElement('ul');
   ul.className = 'todo-list task-group-list';
-  items.forEach((todo) => ul.appendChild(buildTodoItem(todo)));
+  items.forEach((todo) => ul.appendChild(buildTodoItem(todo, { archived })));
 
   details.append(summary, ul);
   return details;
@@ -1419,6 +1449,15 @@ function buildLinkGroup(cat, items, kind) {
 // --- Saved for Later: same tile grid, lives inside a collapsible <details> ---
 function renderSavedLinks() {
   savedGrid.innerHTML = '';
+
+  // Grouped mode mirrors quickLinks: bucket per tag, ignore the filter chip.
+  if (groupLinksByCategory && savedLinks.length > 0) {
+    savedArchive.hidden = false;
+    savedCount.textContent = savedLinks.length;
+    renderGroupedSavedLinks();
+    return;
+  }
+
   const visible = filteredSavedLinks();
   // Hide the saved-archive entirely when there's nothing to show under the
   // current filter — keeps the panel quiet when filtering by a tag with no
@@ -1431,6 +1470,21 @@ function renderSavedLinks() {
   savedArchive.hidden = false;
   savedCount.textContent = visible.length;
   visible.forEach((link) => savedGrid.appendChild(buildLinkTile(link, 'saved')));
+}
+
+function renderGroupedSavedLinks() {
+  const buckets = new Map();
+  savedLinks.forEach((l) => {
+    const key = getCategory(l.category) ? l.category : '__untagged__';
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(l);
+  });
+  linkCategories.forEach((cat) => {
+    const items = buckets.get(cat.id);
+    if (items && items.length) savedGrid.appendChild(buildLinkGroup(cat, items, 'saved'));
+  });
+  const untagged = buckets.get('__untagged__');
+  if (untagged && untagged.length) savedGrid.appendChild(buildLinkGroup(null, untagged, 'saved'));
 }
 
 // Single tile factory for both lists. Action set varies by kind:
@@ -2020,6 +2074,7 @@ setupDnd({
 setupDnd({
   container: archiveList,
   itemSelector: '.todo-item',
+  groupSelector: '.task-group', // constrains reorders to within the same group when grouped
   getList: () => archivedTodos,
   axis: 'y',
   onChange: () => { saveTodos(); renderTodos(); },
@@ -2035,6 +2090,7 @@ setupDnd({
 setupDnd({
   container: savedGrid,
   itemSelector: '.link-tile',
+  groupSelector: '.link-group', // grouped mode constrains drops to the same tag's section
   getList: () => savedLinks,
   axis: 'x',
   onChange: () => { saveLinks(); renderSavedLinks(); },
