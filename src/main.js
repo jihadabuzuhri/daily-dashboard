@@ -348,10 +348,12 @@ let selectedLinkCategoryId = null;    // quick + saved links (shared)
 // state in init() and whenever the user toggles via the chip row.
 let groupByCategory = false;          // tasks
 let groupLinksByCategory = false;     // quick links
-// Ephemeral per-session memory of which group headers the user collapsed.
-// Keys are prefixed by list ("task:" / "link:") so tasks and links don't
-// share collapse state for tags with the same id.
-const collapsedGroups = new Set();
+// Ephemeral per-session memory of which group headers the user expanded.
+// All groups start COLLAPSED when entering grouped view — the user opens
+// individual sections as needed. Keys are prefixed by list ("task:" /
+// "archive:" / "link-quick:" / "link-saved:") so the same tag in different
+// lists doesn't share open/closed state.
+const expandedGroups = new Set();
 
 const categoryRow     = $('#category-row');
 const linkCategoryRow = $('#link-category-row');
@@ -1182,10 +1184,10 @@ function buildTaskGroup(cat, items, { archived = false } = {}) {
   // doesn't share open/closed state.
   const prefix = archived ? 'archive' : 'task';
   const key = `${prefix}:${cat ? cat.id : '__untagged__'}`;
-  details.open = !collapsedGroups.has(key);
+  details.open = expandedGroups.has(key);
   details.addEventListener('toggle', () => {
-    if (details.open) collapsedGroups.delete(key);
-    else collapsedGroups.add(key);
+    if (details.open) expandedGroups.add(key);
+    else expandedGroups.delete(key);
   });
 
   const summary = document.createElement('summary');
@@ -1422,10 +1424,10 @@ function buildLinkGroup(cat, items, kind) {
   const details = document.createElement('details');
   details.className = 'link-group';
   const key = `link-${kind}:${cat ? cat.id : '__untagged__'}`;
-  details.open = !collapsedGroups.has(key);
+  details.open = expandedGroups.has(key);
   details.addEventListener('toggle', () => {
-    if (details.open) collapsedGroups.delete(key);
-    else collapsedGroups.add(key);
+    if (details.open) expandedGroups.add(key);
+    else expandedGroups.delete(key);
   });
 
   const summary = document.createElement('summary');
