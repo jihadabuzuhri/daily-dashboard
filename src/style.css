@@ -313,7 +313,6 @@ body {
 .focus-dialog::backdrop {
   background: rgba(8, 8, 10, 0.30);
   backdrop-filter: blur(8px) saturate(115%);
-  -webkit-backdrop-filter: blur(8px) saturate(115%);
   animation: focusBackdropIn 280ms var(--ease);
 }
 [data-theme="light"] .focus-dialog::backdrop {
@@ -1628,7 +1627,6 @@ body {
 .edit-dialog::backdrop {
   background: rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
   animation: fadeIn var(--t-base) var(--ease);
 }
 .edit-dialog[open] .edit-form { animation: dialogIn var(--t-base) var(--ease-spring); }

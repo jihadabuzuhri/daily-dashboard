@@ -108,6 +108,27 @@ function fileStorePlugin() {
 export default defineConfig({
   // Relative base so the build works at any subpath (e.g. GitHub Pages at /<repo>/).
   base: './',
+  build: {
+    // Vite's default CSS minifier (esbuild) aggressively collapses prefix
+    // families: with the `modules` cssTarget it dropped the unprefixed
+    // `backdrop-filter` because Safari 14 wants `-webkit-` and FF78 doesn't
+    // support the feature at all. That broke blur in Firefox 103+, which only
+    // accepts the unprefixed form. Force-targeting modern Firefox via
+    // cssTarget alone wasn't enough — esbuild ignored it. lightningcss is
+    // browser-target-aware and keeps both forms when needed.
+    cssMinify: 'lightningcss',
+    cssTarget: ['chrome87', 'firefox103', 'safari14', 'edge88'],
+  },
+  css: {
+    transformer: 'lightningcss',
+    lightningcss: {
+      targets: {
+        chrome: 87 << 16,
+        firefox: 103 << 16,
+        safari: 14 << 16,
+      },
+    },
+  },
   plugins: [
     fileStorePlugin(),
     VitePWA({
