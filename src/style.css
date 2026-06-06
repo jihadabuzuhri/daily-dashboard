@@ -1073,10 +1073,13 @@ body {
   gap: 8px;
   padding: 8px 10px;
   border-radius: var(--radius-sm);
-  color: var(--text-muted);
+  /* Heavier than tag-group summaries so the parent section still reads as the
+     dominant heading when grouped (where children sit underneath it). */
+  color: var(--text);
   font-size: 12px;
+  font-weight: 700;
   font-family: var(--font-mono);
-  letter-spacing: 0.04em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   user-select: none;
@@ -1529,10 +1532,13 @@ body {
   gap: 8px;
   padding: 8px 10px;
   border-radius: var(--radius-sm);
-  color: var(--text-muted);
+  /* Heavier than tag-group summaries so the parent section still reads as the
+     dominant heading when grouped (where children sit underneath it). */
+  color: var(--text);
   font-size: 12px;
+  font-weight: 700;
   font-family: var(--font-mono);
-  letter-spacing: 0.04em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   user-select: none;
