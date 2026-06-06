@@ -734,8 +734,8 @@ body {
 /* ---------- Main grid ---------- */
 .main {
   display: grid;
-  /* Equal-width columns. The wider container handles the extra horizontal
-     room (margins are smaller) and both panels share it evenly. */
+  /* Equal-width columns. Today's Work spans both via grid-column below so
+     row 1 is the full-width log, and Tasks + Quick Links share row 2. */
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 32px;
   align-items: start;
@@ -788,8 +788,8 @@ body {
 }
 
 /* ---------- Journal panel ---------- */
-/* Spans both columns of the .main grid so the daily log gets the full width
-   of the dashboard without crowding Tasks or Quick Links. */
+/* Spans both columns of the .main grid so the daily log sits across the top
+   in row 1; Tasks + Quick Links share row 2 underneath. */
 .journal-panel {
   grid-column: 1 / -1;
 }
