@@ -348,12 +348,15 @@ let selectedLinkCategoryId = null;    // quick + saved links (shared)
 // state in init() and whenever the user toggles via the chip row.
 let groupByCategory = false;          // tasks
 let groupLinksByCategory = false;     // quick links
-// Ephemeral per-session memory of which group headers the user expanded.
-// All groups start COLLAPSED when entering grouped view — the user opens
-// individual sections as needed. Keys are prefixed by list ("task:" /
-// "archive:" / "link-quick:" / "link-saved:") so the same tag in different
-// lists doesn't share open/closed state.
+// Ephemeral per-session memory of group open/closed state. Most lists default
+// to COLLAPSED — the user opens individual sections as needed; `expandedGroups`
+// holds the ones they popped open. Quick Links is the exception: it's the
+// primary view, so its groups default to OPEN and `collapsedQuickGroups` holds
+// the ones the user explicitly collapsed.
+// Keys are prefixed by list ("task:" / "archive:" / "link-quick:" /
+// "link-saved:") so the same tag in different lists doesn't share state.
 const expandedGroups = new Set();
+const collapsedQuickGroups = new Set();
 
 const categoryRow     = $('#category-row');
 const linkCategoryRow = $('#link-category-row');
@@ -1424,11 +1427,22 @@ function buildLinkGroup(cat, items, kind) {
   const details = document.createElement('details');
   details.className = 'link-group';
   const key = `link-${kind}:${cat ? cat.id : '__untagged__'}`;
-  details.open = expandedGroups.has(key);
-  details.addEventListener('toggle', () => {
-    if (details.open) expandedGroups.add(key);
-    else expandedGroups.delete(key);
-  });
+  if (kind === 'quick') {
+    // Quick Links is the primary view — groups default OPEN; only collapses
+    // the user explicitly performed are remembered.
+    details.open = !collapsedQuickGroups.has(key);
+    details.addEventListener('toggle', () => {
+      if (details.open) collapsedQuickGroups.delete(key);
+      else collapsedQuickGroups.add(key);
+    });
+  } else {
+    // Saved-for-later — same default-collapsed semantics as task groups.
+    details.open = expandedGroups.has(key);
+    details.addEventListener('toggle', () => {
+      if (details.open) expandedGroups.add(key);
+      else expandedGroups.delete(key);
+    });
+  }
 
   const summary = document.createElement('summary');
   summary.className = 'task-group-summary';
