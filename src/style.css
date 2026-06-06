@@ -787,6 +787,252 @@ body {
   letter-spacing: 0.04em;
 }
 
+/* ---------- Journal panel ---------- */
+/* Spans both columns of the .main grid so the daily log gets the full width
+   of the dashboard without crowding Tasks or Quick Links. */
+.journal-panel {
+  grid-column: 1 / -1;
+}
+.journal-head { margin-bottom: 14px; }
+.journal-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.journal-arrow {
+  width: 28px; height: 28px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease),
+              color var(--t-fast) var(--ease);
+}
+.journal-arrow svg { width: 16px; height: 16px; }
+.journal-arrow:hover { background: var(--surface-2); color: var(--text); }
+.journal-arrow:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  background: transparent;
+  color: var(--text-faint);
+}
+.journal-date-btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  /* Fixed width — sized to fit the longest possible label
+     ("Wednesday, September 30") so the prev/next arrows never shift as the
+     text changes between Today / Yesterday / a full date. */
+  width: 200px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background var(--t-fast) var(--ease),
+              color var(--t-fast) var(--ease);
+}
+.journal-date-btn:hover { background: var(--surface-2); color: var(--text); }
+.journal-date-btn.is-today { color: var(--accent); }
+
+/* ---------- Custom date picker (calendar popover) ---------- */
+.calendar-popover {
+  position: fixed;
+  width: 296px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  z-index: 120;
+  user-select: none;
+  animation: dialogIn var(--t-fast) var(--ease-spring);
+}
+.calendar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.calendar-nav-btn {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease),
+              color var(--t-fast) var(--ease);
+}
+.calendar-nav-btn svg { width: 16px; height: 16px; }
+.calendar-nav-btn:hover { background: var(--surface-2); color: var(--text); }
+.calendar-nav-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  background: transparent;
+  color: var(--text-faint);
+}
+.calendar-title {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  flex: 1;
+  text-align: center;
+}
+.calendar-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  margin-bottom: 4px;
+}
+.calendar-weekdays span {
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  padding: 6px 0;
+}
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+.calendar-day {
+  position: relative;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease),
+              color var(--t-fast) var(--ease),
+              transform var(--t-fast) var(--ease);
+}
+.calendar-day:hover { background: var(--surface-2); }
+.calendar-day.is-today {
+  color: var(--accent);
+  font-weight: 600;
+}
+.calendar-day.is-selected {
+  background: var(--accent);
+  color: var(--bg);
+  font-weight: 600;
+  box-shadow: 0 6px 16px -8px var(--accent);
+}
+.calendar-day.is-selected:hover { background: var(--accent); transform: scale(1.04); }
+.calendar-day.is-future {
+  color: var(--text-faint);
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.calendar-day.is-future:hover { background: transparent; }
+.calendar-day.has-entries::after {
+  content: '';
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.calendar-day.is-selected.has-entries::after { background: var(--bg); }
+.calendar-day-empty {
+  height: 34px;
+  pointer-events: none;
+}
+.calendar-foot {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-soft);
+  display: flex;
+  justify-content: center;
+}
+.calendar-today-btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease);
+}
+.calendar-today-btn:hover { background: var(--accent-soft); }
+
+/* Add input — reuses .add-task chrome for consistency with the Tasks panel. */
+.journal-add { margin-bottom: 8px; }
+
+/* Entry list — each row mirrors the structure of a todo item (text + hover
+   actions) but without checkbox / drag handle / archive verbs. */
+.journal-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.journal-entry {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  transition: background var(--t-fast) var(--ease);
+  animation: slideIn var(--t-base) var(--ease);
+}
+.journal-entry:hover { background: var(--surface-2); }
+.journal-bullet {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+.journal-text {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.5;
+  outline: none;
+  border-radius: 4px;
+  padding: 4px 6px;
+  margin-left: -6px;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  transition: background var(--t-fast) var(--ease);
+}
+.journal-text:focus { background: var(--surface-3); }
+.journal-empty { margin-top: 8px; }
+
 /* ---------- Progress bar ---------- */
 .progress {
   height: 3px;
@@ -1001,7 +1247,9 @@ body {
   flex-shrink: 0;
 }
 .todo-item:hover .todo-actions,
-.todo-item:focus-within .todo-actions { opacity: 1; }
+.todo-item:focus-within .todo-actions,
+.journal-entry:hover .todo-actions,
+.journal-entry:focus-within .todo-actions { opacity: 1; }
 
 .btn-icon {
   width: 26px; height: 26px;
@@ -1533,21 +1781,26 @@ body {
   margin-left: -6px;
   transition: opacity var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
 }
-.todo-item:hover .drag-handle { opacity: 1; }
+.todo-item:hover .drag-handle,
+.journal-entry:hover .drag-handle { opacity: 1; }
 .drag-handle:hover { color: var(--text-muted); }
 .drag-handle:active,
-.todo-item.dragging .drag-handle { cursor: grabbing; }
+.todo-item.dragging .drag-handle,
+.journal-entry.dragging .drag-handle { cursor: grabbing; }
 .drag-handle svg { width: 12px; height: 12px; pointer-events: none; }
 
 /* Dragging source — fade out the original */
 .todo-item.dragging,
+.journal-entry.dragging,
 .link-tile.dragging {
   opacity: 0.35;
 }
 
 /* Insertion indicators (no layout shift — box-shadow + outline) */
-.todo-item.drop-before { box-shadow: 0 -2px 0 0 var(--accent); }
-.todo-item.drop-after  { box-shadow: 0 2px 0 0 var(--accent); }
+.todo-item.drop-before,
+.journal-entry.drop-before { box-shadow: 0 -2px 0 0 var(--accent); }
+.todo-item.drop-after,
+.journal-entry.drop-after  { box-shadow: 0 2px 0 0 var(--accent); }
 
 .link-tile.drop-before { box-shadow: -2px 0 0 0 var(--accent); }
 .link-tile.drop-after  { box-shadow: 2px 0 0 0 var(--accent); }

@@ -105,6 +105,26 @@ function applyData(state, data) {
   state.theme = data.theme === 'light' ? 'light' : 'dark';
   state.groupByCategory = !!data.groupByCategory;
   state.groupLinksByCategory = !!data.groupLinksByCategory;
+
+  // Journal — date-keyed map of work-log entries. Each value is an array of
+  // { id, text } objects. Refill in place so module-level references to
+  // `state.journal` stay valid.
+  //
+  // Legacy migration: an earlier shape stored a single string per date. If we
+  // load that, wrap it in a single entry so nothing is lost.
+  const incomingJournal = (data.journal && typeof data.journal === 'object' && !Array.isArray(data.journal))
+    ? data.journal : {};
+  Object.keys(state.journal).forEach((k) => { delete state.journal[k]; });
+  Object.entries(incomingJournal).forEach(([k, v]) => {
+    if (Array.isArray(v)) {
+      const safe = v
+        .filter((e) => e && typeof e.text === 'string' && e.text)
+        .map((e) => ({ id: e.id ?? (Date.now() + Math.random()), text: e.text }));
+      if (safe.length) state.journal[k] = safe;
+    } else if (typeof v === 'string' && v.trim()) {
+      state.journal[k] = [{ id: Date.now() + Math.random(), text: v.trim() }];
+    }
+  });
 }
 
 function isEmpty(data) {
@@ -117,7 +137,7 @@ function isEmpty(data) {
 }
 
 const store = {
-  state: { todos: [], archivedTodos: [], quickLinks: [], savedLinks: [], theme: 'dark', taskCategories: [], linkCategories: [], groupByCategory: false, groupLinksByCategory: false },
+  state: { todos: [], archivedTodos: [], quickLinks: [], savedLinks: [], theme: 'dark', taskCategories: [], linkCategories: [], groupByCategory: false, groupLinksByCategory: false, journal: {} },
   _saveTimer: null,
   mode: 'local',          // 'file' | 'gist' | 'local'
   syncStatus: 'idle',     // 'idle' | 'syncing' | 'synced' | 'error'
@@ -1236,6 +1256,389 @@ function playFocusChime() {
       osc.stop(t + 0.5);
     });
   } catch { /* audio is non-essential; silent failure is fine */ }
+}
+
+// =====================================================
+// TODAY'S WORK — daily work-log list
+// =====================================================
+// State: store.state.journal is a map of ISO local date ("YYYY-MM-DD") →
+// array of { id, text }. currentJournalDate tracks which entry the user is
+// currently viewing. Add via Enter in the input; edit by clicking the row's
+// text; remove via the × on hover. Same UI patterns as the Tasks panel for
+// muscle-memory consistency.
+
+const journalInput     = $('#journal-input');
+const journalForm      = $('#journal-form');
+const journalList      = $('#journal-list');
+const journalEmpty     = $('#journal-empty');
+const journalPrev      = $('#journal-prev');
+const journalNext      = $('#journal-next');
+const journalDateBtn   = $('#journal-date');
+
+let currentJournalDate = isoLocalDate(new Date());
+
+// ISO date in the user's local timezone — toISOString would give UTC, which
+// would shift midnight for anyone west of GMT and corrupt the per-date map.
+function isoLocalDate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+function dateFromIso(iso) {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+function shiftIsoDate(iso, days) {
+  const d = dateFromIso(iso);
+  d.setDate(d.getDate() + days);
+  return isoLocalDate(d);
+}
+function formatJournalDate(iso) {
+  const d = dateFromIso(iso);
+  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+}
+
+function getJournalEntries(iso) {
+  const raw = store.state.journal[iso];
+  return Array.isArray(raw) ? raw : [];
+}
+function commitJournalEntries(iso, entries) {
+  if (entries.length) store.state.journal[iso] = entries;
+  else                delete store.state.journal[iso];
+  store.save();
+}
+
+function addJournalEntry(text) {
+  const trimmed = text.trim();
+  if (!trimmed) return;
+  const arr = getJournalEntries(currentJournalDate).slice();
+  arr.push({ id: Date.now() + Math.random(), text: trimmed });
+  commitJournalEntries(currentJournalDate, arr);
+  renderJournalList();
+}
+function editJournalEntry(id, text) {
+  const arr = getJournalEntries(currentJournalDate).slice();
+  const e = arr.find((x) => x.id === id);
+  if (!e) return;
+  const trimmed = text.trim();
+  if (!trimmed) { deleteJournalEntry(id); return; }
+  e.text = trimmed;
+  commitJournalEntries(currentJournalDate, arr);
+}
+function deleteJournalEntry(id) {
+  const arr = getJournalEntries(currentJournalDate);
+  const idx = arr.findIndex((x) => x.id === id);
+  if (idx < 0) return;
+  const [removed] = arr.splice(idx, 1);
+  commitJournalEntries(currentJournalDate, arr);
+  renderJournalList();
+  showToast('Entry removed', { label: 'Undo', fn: () => {
+    const cur = getJournalEntries(currentJournalDate).slice();
+    cur.splice(idx, 0, removed);
+    commitJournalEntries(currentJournalDate, cur);
+    renderJournalList();
+  }});
+}
+
+function renderJournalList() {
+  journalList.innerHTML = '';
+  const entries = getJournalEntries(currentJournalDate);
+  journalEmpty.classList.toggle('hidden', entries.length > 0);
+  entries.forEach((entry) => journalList.appendChild(buildJournalEntry(entry)));
+}
+
+function buildJournalEntry(entry) {
+  const li = document.createElement('li');
+  li.className = 'journal-entry';
+  li.dataset.id = entry.id;
+  li.draggable = true;
+
+  const handle = document.createElement('span');
+  handle.className = 'drag-handle';
+  handle.setAttribute('aria-hidden', 'true');
+  handle.innerHTML = ICONS.grip;
+
+  const dot = document.createElement('span');
+  dot.className = 'journal-bullet';
+  dot.setAttribute('aria-hidden', 'true');
+
+  const text = document.createElement('span');
+  text.className = 'journal-text';
+  text.textContent = entry.text;
+  text.contentEditable = 'true';
+  text.spellcheck = false;
+  text.addEventListener('blur', () => editJournalEntry(entry.id, text.textContent));
+  text.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); text.blur(); }
+    if (e.key === 'Escape') { text.textContent = entry.text; text.blur(); }
+  });
+
+  const actions = document.createElement('div');
+  actions.className = 'todo-actions';
+  actions.appendChild(makeBtn('trash', 'Delete', () => deleteJournalEntry(entry.id), 'danger'));
+
+  li.append(handle, dot, text, actions);
+  return li;
+}
+
+function renderJournalHeader() {
+  const today = isoLocalDate(new Date());
+  const isToday = currentJournalDate === today;
+  const isYesterday = currentJournalDate === shiftIsoDate(today, -1);
+
+  let label;
+  if (isToday)          label = 'Today';
+  else if (isYesterday) label = 'Yesterday';
+  else                  label = formatJournalDate(currentJournalDate);
+
+  journalDateBtn.textContent = label;
+  journalDateBtn.classList.toggle('is-today', isToday);
+  journalDateBtn.title = `Pick a date — currently ${formatJournalDate(currentJournalDate)}`;
+
+  // Future entries don't make sense for a work log — disable Next when we're
+  // already on today. The input placeholder also adapts so it doesn't always
+  // imply "today".
+  journalNext.disabled = isToday;
+  journalInput.placeholder = isToday
+    ? 'What did you accomplish?'
+    : `What was done on ${formatJournalDate(currentJournalDate)}?`;
+
+}
+
+function renderJournal() {
+  renderJournalHeader();
+  renderJournalList();
+}
+
+journalForm?.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const text = journalInput.value;
+  if (!text.trim()) return;
+  addJournalEntry(text);
+  journalInput.value = '';
+  journalInput.focus();
+});
+journalPrev?.addEventListener('click', () => {
+  currentJournalDate = shiftIsoDate(currentJournalDate, -1);
+  renderJournal();
+});
+journalNext?.addEventListener('click', () => {
+  if (journalNext.disabled) return;
+  currentJournalDate = shiftIsoDate(currentJournalDate, 1);
+  renderJournal();
+});
+journalDateBtn?.addEventListener('click', () => {
+  if (activeCalendar) closeCalendar();
+  else openCalendar();
+});
+
+// --- Custom calendar popover ---
+// Renders a 7-column month grid anchored under the date button. Today is
+// accent-tinted, the selected date is filled with the accent, future dates are
+// disabled, and dates that already have entries show a small dot beneath them
+// so users can find old days at a glance.
+
+let activeCalendar = null;
+let calendarViewYear  = 0;
+let calendarViewMonth = 0;
+
+const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+function openCalendar() {
+  closeCalendar();
+  const cur = dateFromIso(currentJournalDate);
+  calendarViewYear  = cur.getFullYear();
+  calendarViewMonth = cur.getMonth();
+
+  const pop = document.createElement('div');
+  pop.className = 'calendar-popover';
+  pop.setAttribute('role', 'dialog');
+  pop.setAttribute('aria-label', 'Pick a date');
+
+  // Header — month title + prev/next month buttons
+  const head = document.createElement('div');
+  head.className = 'calendar-head';
+  const prev = document.createElement('button');
+  prev.type = 'button';
+  prev.className = 'calendar-nav-btn';
+  prev.setAttribute('aria-label', 'Previous month');
+  prev.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 6 9 12 15 18"/></svg>';
+  prev.addEventListener('click', () => shiftCalendarMonth(-1));
+  const title = document.createElement('div');
+  title.className = 'calendar-title';
+  const next = document.createElement('button');
+  next.type = 'button';
+  next.className = 'calendar-nav-btn';
+  next.setAttribute('aria-label', 'Next month');
+  next.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"/></svg>';
+  next.addEventListener('click', () => shiftCalendarMonth(1));
+  head.append(prev, title, next);
+
+  // Weekday strip — fixed 7 columns
+  const weekdays = document.createElement('div');
+  weekdays.className = 'calendar-weekdays';
+  WEEKDAY_LABELS.forEach((d) => {
+    const span = document.createElement('span');
+    span.textContent = d;
+    weekdays.appendChild(span);
+  });
+
+  // Day grid — rebuilt by renderCalendarBody on month change
+  const grid = document.createElement('div');
+  grid.className = 'calendar-grid';
+
+  // Footer — quick "today" shortcut
+  const foot = document.createElement('div');
+  foot.className = 'calendar-foot';
+  const todayBtn = document.createElement('button');
+  todayBtn.type = 'button';
+  todayBtn.className = 'calendar-today-btn';
+  todayBtn.textContent = 'Jump to today';
+  todayBtn.addEventListener('click', () => {
+    currentJournalDate = isoLocalDate(new Date());
+    closeCalendar();
+    renderJournal();
+  });
+  foot.appendChild(todayBtn);
+
+  pop.append(head, weekdays, grid, foot);
+
+  // Mount hidden so we can render the body and measure the true final
+  // height before placing the popover.
+  pop.style.position = 'fixed';
+  pop.style.visibility = 'hidden';
+  document.body.appendChild(pop);
+  activeCalendar = pop;
+
+  // Populate the day grid FIRST so offsetHeight reflects the full popover —
+  // otherwise the position fallback uses a tiny "empty grid" height and the
+  // popover can end up clipped below the viewport.
+  renderCalendarBody();
+
+  // Generous viewport margin so the popover never hugs the screen edges,
+  // especially the bottom where it would otherwise sit right against the
+  // browser chrome / scrollbar.
+  const VIEWPORT_MARGIN = 24;
+  const rect = journalDateBtn.getBoundingClientRect();
+  const pw = pop.offsetWidth;
+  const ph = pop.offsetHeight;
+  let top = rect.bottom + 8;
+  if (top + ph > window.innerHeight - VIEWPORT_MARGIN) {
+    top = Math.max(VIEWPORT_MARGIN, rect.top - ph - 8);
+  }
+  let left = rect.left + rect.width / 2 - pw / 2;
+  if (left + pw > window.innerWidth - VIEWPORT_MARGIN) left = window.innerWidth - pw - VIEWPORT_MARGIN;
+  if (left < VIEWPORT_MARGIN) left = VIEWPORT_MARGIN;
+  pop.style.top  = `${top}px`;
+  pop.style.left = `${left}px`;
+  pop.style.visibility = '';
+
+  setTimeout(() => {
+    document.addEventListener('mousedown', calendarOutsideMousedown, true);
+    document.addEventListener('keydown', calendarEscape, true);
+    window.addEventListener('resize', closeCalendar);
+    window.addEventListener('scroll', closeCalendar, true);
+  }, 0);
+}
+
+function shiftCalendarMonth(delta) {
+  calendarViewMonth += delta;
+  while (calendarViewMonth < 0)  { calendarViewMonth += 12; calendarViewYear--; }
+  while (calendarViewMonth > 11) { calendarViewMonth -= 12; calendarViewYear++; }
+  renderCalendarBody();
+}
+
+function renderCalendarBody() {
+  if (!activeCalendar) return;
+  const title = activeCalendar.querySelector('.calendar-title');
+  const grid  = activeCalendar.querySelector('.calendar-grid');
+  const nextBtn = activeCalendar.querySelectorAll('.calendar-nav-btn')[1];
+
+  const monthName = new Date(calendarViewYear, calendarViewMonth, 1)
+    .toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  title.textContent = monthName;
+
+  const todayIso = isoLocalDate(new Date());
+  const todayDate = dateFromIso(todayIso);
+  // Disable the next-month arrow when it would point past today's month.
+  nextBtn.disabled =
+    calendarViewYear  > todayDate.getFullYear() ||
+    (calendarViewYear === todayDate.getFullYear() && calendarViewMonth >= todayDate.getMonth());
+
+  grid.innerHTML = '';
+  const firstDay = new Date(calendarViewYear, calendarViewMonth, 1);
+  const startDayOfWeek = firstDay.getDay();
+  const daysInMonth = new Date(calendarViewYear, calendarViewMonth + 1, 0).getDate();
+
+  // Always render exactly 6 weeks (42 cells). Most months only need 5 weeks
+  // but a 31-day month that starts on Friday/Saturday spills to 6. Padding
+  // with empty cells keeps the popover height constant, so its original
+  // anchored position stays valid as the user navigates months.
+  const TOTAL_CELLS = 42;
+  const trailingEmpty = TOTAL_CELLS - startDayOfWeek - daysInMonth;
+
+  // Pad the start with empty cells so the first day lands in the right column.
+  for (let i = 0; i < startDayOfWeek; i++) {
+    const empty = document.createElement('span');
+    empty.className = 'calendar-day calendar-day-empty';
+    empty.setAttribute('aria-hidden', 'true');
+    grid.appendChild(empty);
+  }
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const date = new Date(calendarViewYear, calendarViewMonth, d);
+    const iso = isoLocalDate(date);
+    const isToday    = iso === todayIso;
+    const isSelected = iso === currentJournalDate;
+    const isFuture   = iso > todayIso;
+    const hasEntries = Array.isArray(store.state.journal[iso]) && store.state.journal[iso].length > 0;
+
+    const cell = document.createElement('button');
+    cell.type = 'button';
+    cell.className = 'calendar-day';
+    if (isToday)    cell.classList.add('is-today');
+    if (isSelected) cell.classList.add('is-selected');
+    if (isFuture)   { cell.classList.add('is-future'); cell.disabled = true; }
+    if (hasEntries && !isFuture) cell.classList.add('has-entries');
+    cell.textContent = d;
+    cell.setAttribute('aria-label',
+      date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }));
+    cell.addEventListener('click', () => {
+      if (isFuture) return;
+      currentJournalDate = iso;
+      closeCalendar();
+      renderJournal();
+    });
+    grid.appendChild(cell);
+  }
+
+  // Trailing empties — keep the grid at a fixed 6-row height.
+  for (let i = 0; i < trailingEmpty; i++) {
+    const empty = document.createElement('span');
+    empty.className = 'calendar-day calendar-day-empty';
+    empty.setAttribute('aria-hidden', 'true');
+    grid.appendChild(empty);
+  }
+}
+
+function closeCalendar() {
+  if (!activeCalendar) return;
+  activeCalendar.remove();
+  activeCalendar = null;
+  document.removeEventListener('mousedown', calendarOutsideMousedown, true);
+  document.removeEventListener('keydown', calendarEscape, true);
+  window.removeEventListener('resize', closeCalendar);
+  window.removeEventListener('scroll', closeCalendar, true);
+}
+
+function calendarOutsideMousedown(e) {
+  if (activeCalendar && !activeCalendar.contains(e.target) && !journalDateBtn.contains(e.target)) {
+    closeCalendar();
+  }
+}
+function calendarEscape(e) {
+  if (e.key === 'Escape') { e.stopPropagation(); closeCalendar(); }
 }
 
 // =====================================================
@@ -2379,6 +2782,18 @@ setupDnd({
   onChange: () => { saveLinks(); renderSavedLinks(); },
 });
 
+// Today's Work — same vertical reorder pattern as the task list. getList
+// returns the current date's entry array; setupDnd mutates it in place via
+// splice, which also mutates store.state.journal[currentJournalDate]. On
+// dates with no entries, getList returns a fresh [] which DnD just no-ops on.
+setupDnd({
+  container: journalList,
+  itemSelector: '.journal-entry',
+  getList: () => getJournalEntries(currentJournalDate),
+  axis: 'y',
+  onChange: () => { store.save(); renderJournalList(); },
+});
+
 // Chip rows — drag a tag to reorder. The backing arrays (taskCategories /
 // linkCategories) drive both the chip-row order AND the order of sections in
 // the grouped-by-tag view, so reordering here reflects in both places.
@@ -2410,6 +2825,7 @@ async function init() {
   renderTodos();
   renderQuickLinks();
   renderSavedLinks();
+  renderJournal();
   guardPlaceholders();
 }
 init();

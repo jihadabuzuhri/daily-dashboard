@@ -17,6 +17,7 @@ const DEFAULTS = {
   linkCategories: [],
   groupByCategory: false,
   groupLinksByCategory: false,
+  journal: {},
 };
 
 async function readStore() {
@@ -85,6 +86,13 @@ function fileStorePlugin() {
               linkCategories: Array.isArray(parsed.linkCategories) ? parsed.linkCategories : [],
               groupByCategory: !!parsed.groupByCategory,
               groupLinksByCategory: !!parsed.groupLinksByCategory,
+              // Journal — date-keyed { "YYYY-MM-DD": Entry[] }. Each entry is
+              // { id, text }. Legacy string values are accepted on read so an
+              // existing single-line file still loads cleanly (the client
+              // migrates them to entry objects).
+              journal: (parsed.journal && typeof parsed.journal === 'object' && !Array.isArray(parsed.journal))
+                ? Object.fromEntries(Object.entries(parsed.journal).filter(([, v]) => Array.isArray(v) || typeof v === 'string'))
+                : {},
             };
             await writeStore(safe);
             res.statusCode = 204;
