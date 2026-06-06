@@ -125,7 +125,7 @@ body {
 
 /* ---------- Layout ---------- */
 #app {
-  max-width: 1100px;
+  max-width: 1260px;
   margin: 0 auto;
   padding: 56px 32px 80px;
   display: flex;
@@ -735,7 +735,9 @@ body {
 /* ---------- Main grid ---------- */
 .main {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  /* Equal-width columns. The wider container handles the extra horizontal
+     room (margins are smaller) and both panels share it evenly. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 32px;
   align-items: start;
 }
@@ -1121,6 +1123,49 @@ body {
   border-color: var(--text-muted);
 }
 .todo-item.completed .category-pill.is-set { opacity: 0.55; }
+
+/* === Todo row override: render the pill as a left-edge accent stripe. ===
+   Wider on hover, with a faint placeholder stripe revealed when the task is
+   untagged so the affordance to assign one stays discoverable. */
+.todo-item .category-pill {
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  height: auto;
+  padding: 0;
+  border: none;
+  border-radius: 0 4px 4px 0;
+  background: transparent;
+  box-shadow: none;
+  flex-shrink: 0;
+  z-index: 1;
+}
+.todo-item .category-pill.is-set {
+  background: var(--cat-color);
+  box-shadow: 2px 0 12px -4px var(--cat-soft);
+}
+.todo-item .category-pill:not(.is-set) {
+  /* Untagged: invisible by default, dashed hint on hover so the row's
+     "add a tag" affordance is still discoverable. */
+  opacity: 0;
+  pointer-events: none;
+  background: var(--text-faint);
+}
+.todo-item:hover .category-pill:not(.is-set),
+.todo-item:focus-within .category-pill:not(.is-set) {
+  opacity: 0.5;
+  pointer-events: auto;
+}
+/* Hover-grow — gives the stripe a clear "clickable" feel without changing the
+   row's content layout. */
+.todo-item .category-pill:hover {
+  transform: none;
+  width: 5px;
+}
+.todo-item .category-pill.is-set:hover { box-shadow: 2px 0 16px -2px var(--cat-soft); }
+.todo-item.completed .category-pill.is-set { opacity: 0.5; }
 
 /* Popover — anchored via fixed coords from JS */
 .category-popover {

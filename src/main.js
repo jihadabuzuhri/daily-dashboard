@@ -1305,8 +1305,14 @@ function buildTodoItem(todo, { archived = false } = {}) {
     });
   }
 
-  if (focusBtn) li.append(handle, cb, span, pill, focusBtn, actions);
-  else          li.append(handle, cb, span, pill, actions);
+  // Tag pill is rendered as a colored stripe on the LEFT edge of the row via
+  // CSS (.todo-item .category-pill is absolutely positioned). DOM order is
+  // irrelevant for layout, but we keep the pill out of the flex flow by
+  // attaching it last — when CSS toggles the stripe style, the row collapses
+  // the gap cleanly.
+  if (focusBtn) li.append(handle, cb, span, focusBtn, actions);
+  else          li.append(handle, cb, span, actions);
+  li.appendChild(pill);
 
   // Visual: when this is the active focus task, draw a progress fill underneath.
   if (!archived && focusSession && focusSession.taskId === todo.id) {
