@@ -1016,6 +1016,20 @@ body {
   flex-shrink: 0;
   opacity: 0.7;
 }
+/* Auto-logged from a completed task — small accent-tinted check icon.
+   Sized to occupy roughly the same horizontal slot as .journal-bullet so the
+   row text alignment stays consistent. */
+.journal-check {
+  width: 14px;
+  height: 14px;
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+  flex-shrink: 0;
+  margin-left: -4px;
+  opacity: 0.85;
+}
+.journal-check svg { width: 14px; height: 14px; }
 .journal-text {
   flex: 1;
   min-width: 0;

@@ -119,7 +119,13 @@ function applyData(state, data) {
     if (Array.isArray(v)) {
       const safe = v
         .filter((e) => e && typeof e.text === 'string' && e.text)
-        .map((e) => ({ id: e.id ?? (Date.now() + Math.random()), text: e.text }));
+        .map((e) => {
+          const out = { id: e.id ?? (Date.now() + Math.random()), text: e.text };
+          // Preserve the task-completion link if present so dedup keeps
+          // working after a save/load round-trip.
+          if (typeof e.fromTaskId === 'number') out.fromTaskId = e.fromTaskId;
+          return out;
+        });
       if (safe.length) state.journal[k] = safe;
     } else if (typeof v === 'string' && v.trim()) {
       state.journal[k] = [{ id: Date.now() + Math.random(), text: v.trim() }];
@@ -1317,6 +1323,25 @@ function addJournalEntry(text) {
   commitJournalEntries(currentJournalDate, arr);
   renderJournalList();
 }
+
+// Auto-log a freshly-completed task into today's journal. The link to the
+// source task is just a deduping key — editing/deleting the entry doesn't
+// touch the task, and un-checking the task doesn't remove the entry.
+function appendTaskCompletionToJournal(todo) {
+  const today = isoLocalDate(new Date());
+  const existing = getJournalEntries(today);
+  if (existing.some((e) => e.fromTaskId === todo.id)) return; // already logged
+  const arr = existing.slice();
+  arr.push({
+    id: Date.now() + Math.random(),
+    text: todo.text,
+    fromTaskId: todo.id,
+  });
+  commitJournalEntries(today, arr);
+  // Re-render the panel if the user happens to be looking at today; if they're
+  // viewing a past date, the new entry waits silently in today's bucket.
+  if (currentJournalDate === today) renderJournalList();
+}
 function editJournalEntry(id, text) {
   const arr = getJournalEntries(currentJournalDate).slice();
   const e = arr.find((x) => x.id === id);
@@ -1359,9 +1384,18 @@ function buildJournalEntry(entry) {
   handle.setAttribute('aria-hidden', 'true');
   handle.innerHTML = ICONS.grip;
 
+  // Bullet vs. check — entries auto-logged from a completed task get a small
+  // ✓ icon to visually distinguish them from manually-typed entries.
   const dot = document.createElement('span');
-  dot.className = 'journal-bullet';
-  dot.setAttribute('aria-hidden', 'true');
+  if (entry.fromTaskId != null) {
+    dot.className = 'journal-check';
+    dot.title = 'Logged from a completed task';
+    dot.setAttribute('aria-label', 'From a completed task');
+    dot.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
+  } else {
+    dot.className = 'journal-bullet';
+    dot.setAttribute('aria-hidden', 'true');
+  }
 
   const text = document.createElement('span');
   text.className = 'journal-text';
@@ -1889,7 +1923,12 @@ function toggleTodo(id, archived) {
   const arr = archived ? archivedTodos : todos;
   const t = arr.find(x => x.id === id);
   if (!t) return;
+  const wasDone = t.done;
   t.done = !t.done;
+  // Completing an active task auto-logs it into today's work — the most
+  // common case ("what did I get done?") fills the journal without manual
+  // duplication. Archived items + un-checking don't trigger this.
+  if (!archived && !wasDone && t.done) appendTaskCompletionToJournal(t);
   saveTodos(); renderTodos();
 }
 function editTodo(id, text, archived) {
