@@ -18,6 +18,7 @@ const DEFAULTS = {
   groupByCategory: false,
   groupLinksByCategory: false,
   journal: {},
+  teamLens: { activeTeamId: null, teams: [], perTeam: {} },
 };
 
 async function readStore() {
@@ -93,6 +94,18 @@ function fileStorePlugin() {
               journal: (parsed.journal && typeof parsed.journal === 'object' && !Array.isArray(parsed.journal))
                 ? Object.fromEntries(Object.entries(parsed.journal).filter(([, v]) => Array.isArray(v) || typeof v === 'string'))
                 : {},
+              // Team Lens — independent dataset. Has its own `teams` list
+              // (not piggy-backed on taskCategories) and its own per-team
+              // bucket of tasks, scratchpad, decisions, questions, on-call,
+              // and PR/mention counts.
+              teamLens: (parsed.teamLens && typeof parsed.teamLens === 'object' && !Array.isArray(parsed.teamLens))
+                ? {
+                    activeTeamId: typeof parsed.teamLens.activeTeamId === 'string' ? parsed.teamLens.activeTeamId : null,
+                    teams: Array.isArray(parsed.teamLens.teams) ? parsed.teamLens.teams : [],
+                    perTeam: (parsed.teamLens.perTeam && typeof parsed.teamLens.perTeam === 'object' && !Array.isArray(parsed.teamLens.perTeam))
+                      ? parsed.teamLens.perTeam : {},
+                  }
+                : { activeTeamId: null, teams: [], perTeam: {} },
             };
             await writeStore(safe);
             res.statusCode = 204;

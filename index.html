@@ -89,6 +89,67 @@
         </p>
       </section>
 
+      <section class="panel teamlens-panel">
+        <div class="panel-head">
+          <div class="panel-title">
+            <h2>Team Lens</h2>
+            <span class="panel-meta" id="teamlens-meta">No team selected</span>
+          </div>
+        </div>
+
+        <div class="teamlens-chip-row" id="teamlens-chip-row" role="toolbar" aria-label="Select team"></div>
+
+        <p class="empty-state teamlens-empty" id="teamlens-empty">
+          <span class="empty-icon">·</span>
+          <span class="empty-title">No teams yet</span>
+          <span class="empty-hint">Add a team with the + button above</span>
+        </p>
+
+        <!-- Overview: shown when no team is filtered but teams exist —
+             quick summary of every team's status, click a row to focus. -->
+        <div class="teamlens-overview" id="teamlens-overview" hidden></div>
+
+        <div class="teamlens-body" id="teamlens-body" hidden>
+          <!-- Status pill — at-a-glance health of this team's work -->
+          <div class="lens-status-card">
+            <button type="button" class="lens-status-pill" id="lens-status-pill" data-status="idle" aria-label="Cycle status">
+              <span class="lens-status-dot"></span>
+              <span class="lens-status-text" id="lens-status-text">Idle</span>
+            </button>
+            <input type="text" id="lens-status-note" class="lens-status-note" placeholder="What's happening this week?" autocomplete="off" />
+          </div>
+
+          <!-- Waiting on — what other people owe me before I can ship -->
+          <section class="lens-card">
+            <header class="lens-card-head">
+              <span class="lens-card-label">Waiting on</span>
+              <span class="lens-card-count" id="lens-waiting-count"></span>
+            </header>
+            <ul class="lens-waiting" id="lens-waiting"></ul>
+            <p class="lens-card-empty" id="lens-waiting-empty">Nothing — you're not blocked.</p>
+            <form class="lens-mini-form" id="lens-waiting-form">
+              <span class="lens-mini-prefix">+</span>
+              <input type="text" id="lens-waiting-input" placeholder="Item or person…" autocomplete="off" />
+            </form>
+          </section>
+
+          <!-- Links — runbooks / dashboards / repos for fast pivot -->
+          <section class="lens-card">
+            <header class="lens-card-head">
+              <span class="lens-card-label">Links</span>
+              <span class="lens-card-count" id="lens-links-count"></span>
+            </header>
+            <div class="lens-links" id="lens-links"></div>
+            <p class="lens-card-empty" id="lens-links-empty">No links yet.</p>
+            <form class="lens-mini-form lens-link-form" id="lens-links-form">
+              <input type="text" id="lens-link-label" placeholder="Label" autocomplete="off" />
+              <input type="url" id="lens-link-url" placeholder="https://…" autocomplete="off" />
+              <button type="submit" class="lens-link-add" aria-label="Add link">+</button>
+            </form>
+          </section>
+        </div>
+      </section>
+
       <section class="panel tasks-panel">
         <div class="panel-head">
           <div class="panel-title">

@@ -131,6 +131,23 @@ function applyData(state, data) {
       state.journal[k] = [{ id: Date.now() + Math.random(), text: v.trim() }];
     }
   });
+
+  // Team Lens — fully independent dataset (own teams list, own per-team
+  // tasks). In-place refill so module-level references stay valid.
+  const incomingLens = (data.teamLens && typeof data.teamLens === 'object' && !Array.isArray(data.teamLens)) ? data.teamLens : {};
+  state.teamLens.activeTeamId = typeof incomingLens.activeTeamId === 'string' ? incomingLens.activeTeamId : null;
+  state.teamLens.teams.splice(0, state.teamLens.teams.length, ...(Array.isArray(incomingLens.teams) ? incomingLens.teams : []));
+  Object.keys(state.teamLens.perTeam).forEach((k) => { delete state.teamLens.perTeam[k]; });
+  const incomingPerTeam = (incomingLens.perTeam && typeof incomingLens.perTeam === 'object' && !Array.isArray(incomingLens.perTeam)) ? incomingLens.perTeam : {};
+  Object.entries(incomingPerTeam).forEach(([teamId, raw]) => {
+    if (!raw || typeof raw !== 'object') return;
+    state.teamLens.perTeam[teamId] = {
+      status: ['idle', 'green', 'yellow', 'red'].includes(raw.status) ? raw.status : 'idle',
+      statusNote: typeof raw.statusNote === 'string' ? raw.statusNote : '',
+      waiting: Array.isArray(raw.waiting) ? raw.waiting.filter((w) => w && typeof w.text === 'string') : [],
+      links: Array.isArray(raw.links) ? raw.links.filter((l) => l && typeof l.url === 'string') : [],
+    };
+  });
 }
 
 function isEmpty(data) {
@@ -143,7 +160,7 @@ function isEmpty(data) {
 }
 
 const store = {
-  state: { todos: [], archivedTodos: [], quickLinks: [], savedLinks: [], theme: 'dark', taskCategories: [], linkCategories: [], groupByCategory: false, groupLinksByCategory: false, journal: {} },
+  state: { todos: [], archivedTodos: [], quickLinks: [], savedLinks: [], theme: 'dark', taskCategories: [], linkCategories: [], groupByCategory: false, groupLinksByCategory: false, journal: {}, teamLens: { activeTeamId: null, teams: [], perTeam: {} } },
   _saveTimer: null,
   mode: 'local',          // 'file' | 'gist' | 'local'
   syncStatus: 'idle',     // 'idle' | 'syncing' | 'synced' | 'error'
@@ -232,6 +249,7 @@ let quickLinks = store.state.quickLinks;
 let savedLinks = store.state.savedLinks;
 let taskCategories = store.state.taskCategories;
 let linkCategories = store.state.linkCategories;
+let teams         = store.state.teamLens.teams;
 let quickQuery = '';
 let editingLinkId = null;
 let editingLinkKind = 'quick'; // 'quick' | 'saved' — which list the dialog is editing
@@ -350,11 +368,16 @@ const CATEGORY_PALETTE = [
   '#f0c75e', '#65c8c4', '#e87ab5', '#9b9ed4',
 ];
 
-function getCategories(kind) { return kind === 'link' ? linkCategories : taskCategories; }
+function getCategories(kind) {
+  if (kind === 'link') return linkCategories;
+  if (kind === 'team') return teams;
+  return taskCategories;
+}
 function getCategory(id) {
   if (!id) return null;
   return taskCategories.find((c) => c.id === id)
       || linkCategories.find((c) => c.id === id)
+      || teams.find((c) => c.id === id)
       || null;
 }
 function hexToRgba(hex, alpha) {
@@ -531,6 +554,9 @@ function renderLinkCategoryRow() {
 function renderAllCategoryRows() {
   renderTaskCategoryRow();
   renderLinkCategoryRow();
+  // Team Lens uses task categories as its team list — keep its chip row
+  // and body header in sync. Guarded so it's safe to call before init.
+  if (typeof renderTeamLens === 'function' && teamLensChipRow) renderTeamLens();
 }
 
 // Build a colored-dot pill for any item that has an optional .category field.
@@ -785,11 +811,14 @@ pickerHex.addEventListener('blur', () => {
 });
 
 function openCreateCategoryDialog(kind = 'task') {
-  creatingCategoryKind = kind === 'link' ? 'link' : 'task';
+  creatingCategoryKind = kind === 'link' ? 'link' : (kind === 'team' ? 'team' : 'task');
   pickedColor = CATEGORY_PALETTE[0];
   categoryName.value = '';
   if (categoryDialogTitle) {
-    categoryDialogTitle.textContent = creatingCategoryKind === 'link' ? 'New link tag' : 'New task tag';
+    categoryDialogTitle.textContent =
+      creatingCategoryKind === 'link' ? 'New link tag' :
+      creatingCategoryKind === 'team' ? 'New team' :
+      'New task tag';
   }
   setPickerOpen(false);
   syncPickerFromHex(pickedColor);
@@ -2851,6 +2880,448 @@ setupDnd({
   onChange: () => { store.save(); renderLinkCategoryRow(); renderQuickLinks(); renderSavedLinks(); },
 });
 
+// =====================================================
+// TEAM LENS — at-a-glance per-team status card
+// =====================================================
+// For each team: a colored status pill with a one-line note, a "waiting
+// on" list (blockers / people who owe you), and a small grid of links
+// (runbooks / dashboards / repos). All independent of the Tasks panel.
+// Per-team data lives in store.state.teamLens.perTeam — see getTeamData.
+
+const STATUS_ORDER = ['idle', 'green', 'yellow', 'red'];
+const STATUS_LABELS = { idle: 'Idle', green: 'On track', yellow: 'At risk', red: 'Blocked' };
+
+const teamLensChipRow      = $('#teamlens-chip-row');
+const teamLensMeta         = $('#teamlens-meta');
+const teamLensEmpty        = $('#teamlens-empty');
+const teamLensOverview     = $('#teamlens-overview');
+const teamLensBody         = $('#teamlens-body');
+const lensStatusPill       = $('#lens-status-pill');
+const lensStatusText       = $('#lens-status-text');
+const lensStatusNote       = $('#lens-status-note');
+const lensWaitingEl        = $('#lens-waiting');
+const lensWaitingEmpty     = $('#lens-waiting-empty');
+const lensWaitingCount     = $('#lens-waiting-count');
+const lensWaitingForm      = $('#lens-waiting-form');
+const lensWaitingInput     = $('#lens-waiting-input');
+const lensLinksEl          = $('#lens-links');
+const lensLinksEmpty       = $('#lens-links-empty');
+const lensLinksCount       = $('#lens-links-count');
+const lensLinksForm        = $('#lens-links-form');
+const lensLinkLabel        = $('#lens-link-label');
+const lensLinkUrl          = $('#lens-link-url');
+
+function getActiveTeamId() {
+  const id = store.state.teamLens.activeTeamId;
+  if (!id) return null;
+  return teams.some((t) => t.id === id) ? id : null;
+}
+
+function getTeamData(teamId) {
+  let d = store.state.teamLens.perTeam[teamId];
+  if (!d) {
+    d = { status: 'idle', statusNote: '', waiting: [], links: [] };
+    store.state.teamLens.perTeam[teamId] = d;
+  }
+  if (!STATUS_ORDER.includes(d.status)) d.status = 'idle';
+  if (typeof d.statusNote !== 'string') d.statusNote = '';
+  if (!Array.isArray(d.waiting)) d.waiting = [];
+  if (!Array.isArray(d.links))   d.links   = [];
+  return d;
+}
+
+function relativeTime(ts) {
+  const diff = Date.now() - ts;
+  const m = Math.floor(diff / 60000);
+  const h = Math.floor(diff / 3600000);
+  const d = Math.floor(diff / 86400000);
+  if (m < 1)  return 'just now';
+  if (m < 60) return `${m}m`;
+  if (h < 24) return `${h}h`;
+  if (d < 7)  return `${d}d`;
+  return `${Math.floor(d / 7)}w`;
+}
+
+function setActiveTeam(teamId) {
+  store.state.teamLens.activeTeamId = teamId;
+  store.save();
+  renderTeamLens();
+}
+
+function deleteTeam(id) {
+  const idx = teams.findIndex((t) => t.id === id);
+  if (idx < 0) return;
+  const [team] = teams.splice(idx, 1);
+  const data = store.state.teamLens.perTeam[id];
+  delete store.state.teamLens.perTeam[id];
+  if (store.state.teamLens.activeTeamId === id) store.state.teamLens.activeTeamId = null;
+  store.save();
+  renderTeamLens();
+  showToast(`Team "${team.label}" deleted`, { label: 'Undo', fn: () => {
+    teams.splice(idx, 0, team);
+    if (data) store.state.teamLens.perTeam[id] = data;
+    store.save();
+    renderTeamLens();
+  }});
+}
+
+function renameTeam(id, nextLabel) {
+  const team = teams.find((t) => t.id === id);
+  if (!team) return;
+  const trimmed = (nextLabel || '').trim();
+  if (!trimmed || trimmed === team.label) return;
+  team.label = trimmed;
+  store.save();
+  renderTeamLens();
+}
+
+// Put a chip's label into inline-edit mode. Enter saves, Escape reverts,
+// blur saves (or reverts if the value is empty / unchanged). Selects the
+// existing text so the user can start typing to replace.
+function enterChipRename(labelSpan, team) {
+  if (labelSpan.isContentEditable) return;
+  const original = team.label;
+  labelSpan.contentEditable = 'true';
+  labelSpan.spellcheck = false;
+  labelSpan.focus();
+  const range = document.createRange();
+  range.selectNodeContents(labelSpan);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+
+  let finished = false;
+  const finish = (commit) => {
+    if (finished) return;
+    finished = true;
+    labelSpan.contentEditable = 'false';
+    if (commit) {
+      const next = labelSpan.textContent.trim();
+      if (next && next !== original) renameTeam(team.id, next);
+      else labelSpan.textContent = original;
+    } else {
+      labelSpan.textContent = original;
+    }
+  };
+  labelSpan.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter')  { ev.preventDefault(); finish(true);  labelSpan.blur(); }
+    if (ev.key === 'Escape') { ev.preventDefault(); finish(false); labelSpan.blur(); }
+  });
+  labelSpan.addEventListener('blur', () => finish(true), { once: true });
+}
+
+function renderTeamLensChipRow() {
+  if (!teamLensChipRow) return;
+  teamLensChipRow.innerHTML = '';
+  const activeId = getActiveTeamId();
+  teams.forEach((team) => {
+    const wrap = document.createElement('span');
+    wrap.className = 'teamlens-chip-wrap';
+    // Drag handle for setupDnd: reads dataset.id and requires draggable=true.
+    wrap.draggable = true;
+    wrap.dataset.id = team.id;
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'teamlens-chip' + (activeId === team.id ? ' is-selected' : '');
+    chip.style.setProperty('--cat-color', team.color);
+    chip.style.setProperty('--cat-soft', team.soft);
+    chip.setAttribute('aria-pressed', activeId === team.id ? 'true' : 'false');
+    chip.innerHTML = `<span class="chip-dot"></span><span class="chip-label">${escapeHtml(team.label)}</span>`;
+    const labelSpan = chip.querySelector('.chip-label');
+    chip.addEventListener('click', () => {
+      // Ignore the synthetic click that fires when finishing a rename edit.
+      if (labelSpan.isContentEditable) return;
+      setActiveTeam(activeId === team.id ? null : team.id);
+    });
+
+    // Pencil — renames. Sits at the top-left corner of the chip (mirrors ×).
+    const renameBtn = document.createElement('button');
+    renameBtn.type = 'button';
+    renameBtn.className = 'teamlens-chip-rename';
+    renameBtn.title = `Rename "${team.label}"`;
+    renameBtn.setAttribute('aria-label', `Rename ${team.label}`);
+    renameBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4z"/></svg>';
+    renameBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      enterChipRename(labelSpan, team);
+    });
+
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.className = 'category-chip-delete';
+    x.innerHTML = '&times;';
+    x.title = `Delete team "${team.label}"`;
+    x.setAttribute('aria-label', `Delete team ${team.label}`);
+    x.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteTeam(team.id);
+    });
+    wrap.append(renameBtn, chip, x);
+    teamLensChipRow.appendChild(wrap);
+  });
+
+  const addBtn = document.createElement('button');
+  addBtn.type = 'button';
+  addBtn.className = 'category-add-btn';
+  addBtn.title = 'Add a team';
+  addBtn.setAttribute('aria-label', 'Add a team');
+  addBtn.innerHTML = '+';
+  addBtn.addEventListener('click', () => openCreateCategoryDialog('team'));
+  teamLensChipRow.appendChild(addBtn);
+}
+
+// --- Status pill ---
+function renderStatus(data) {
+  lensStatusPill.dataset.status = data.status;
+  lensStatusText.textContent = STATUS_LABELS[data.status] || 'Idle';
+  if (document.activeElement !== lensStatusNote) lensStatusNote.value = data.statusNote || '';
+}
+
+function cycleStatus() {
+  const teamId = getActiveTeamId();
+  if (!teamId) return;
+  const data = getTeamData(teamId);
+  const i = STATUS_ORDER.indexOf(data.status);
+  data.status = STATUS_ORDER[(i + 1) % STATUS_ORDER.length];
+  store.save();
+  renderStatus(data);
+}
+
+// --- Waiting-on list ---
+function renderWaiting(data) {
+  lensWaitingEl.innerHTML = '';
+  lensWaitingEmpty.hidden = data.waiting.length > 0;
+  lensWaitingCount.textContent = data.waiting.length ? String(data.waiting.length) : '';
+  data.waiting.forEach((w) => {
+    const li = document.createElement('li');
+    li.className = 'lens-waiting-item';
+    const dot = document.createElement('span');
+    dot.className = 'lens-waiting-dot';
+    const text = document.createElement('span');
+    text.className = 'lens-waiting-text';
+    text.textContent = w.text;
+    const age = document.createElement('span');
+    age.className = 'lens-waiting-age';
+    age.textContent = relativeTime(w.ts || Date.now());
+    age.title = new Date(w.ts || Date.now()).toLocaleString();
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'lens-item-del';
+    del.innerHTML = '&times;';
+    del.setAttribute('aria-label', 'Remove');
+    del.addEventListener('click', () => removeWaiting(w.id));
+    li.append(dot, text, age, del);
+    lensWaitingEl.appendChild(li);
+  });
+}
+
+function addWaiting(text) {
+  const teamId = getActiveTeamId();
+  if (!teamId) return;
+  const trimmed = text.trim();
+  if (!trimmed) return;
+  const data = getTeamData(teamId);
+  data.waiting.unshift({ id: Date.now() + Math.random(), text: trimmed, ts: Date.now() });
+  store.save();
+  renderWaiting(data);
+}
+
+function removeWaiting(id) {
+  const teamId = getActiveTeamId();
+  if (!teamId) return;
+  const data = getTeamData(teamId);
+  const idx = data.waiting.findIndex((x) => x.id === id);
+  if (idx < 0) return;
+  data.waiting.splice(idx, 1);
+  store.save();
+  renderWaiting(data);
+}
+
+// --- Links ---
+function renderLensLinks(data) {
+  lensLinksEl.innerHTML = '';
+  lensLinksEmpty.hidden = data.links.length > 0;
+  lensLinksCount.textContent = data.links.length ? String(data.links.length) : '';
+  data.links.forEach((l) => {
+    const a = document.createElement('a');
+    a.className = 'lens-link-chip';
+    a.href = l.url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.title = l.url;
+    const label = document.createElement('span');
+    label.className = 'lens-link-chip-label';
+    label.textContent = l.label || l.url;
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'lens-link-chip-del';
+    del.innerHTML = '&times;';
+    del.setAttribute('aria-label', 'Remove link');
+    del.addEventListener('click', (e) => { e.preventDefault(); removeLensLink(l.id); });
+    a.append(label, del);
+    lensLinksEl.appendChild(a);
+  });
+}
+
+function addLensLink(label, url) {
+  const teamId = getActiveTeamId();
+  if (!teamId) return;
+  const cleanedUrl = url.trim();
+  if (!cleanedUrl) return;
+  const safeUrl = /^https?:\/\//i.test(cleanedUrl) ? cleanedUrl : `https://${cleanedUrl}`;
+  const cleanedLabel = label.trim() || safeUrl.replace(/^https?:\/\//i, '').split('/')[0];
+  const data = getTeamData(teamId);
+  data.links.push({ id: Date.now() + Math.random(), label: cleanedLabel, url: safeUrl });
+  store.save();
+  renderLensLinks(data);
+}
+
+function removeLensLink(id) {
+  const teamId = getActiveTeamId();
+  if (!teamId) return;
+  const data = getTeamData(teamId);
+  const idx = data.links.findIndex((x) => x.id === id);
+  if (idx < 0) return;
+  data.links.splice(idx, 1);
+  store.save();
+  renderLensLinks(data);
+}
+
+function renderTeamLensOverview() {
+  teamLensOverview.innerHTML = '';
+  teams.forEach((team) => {
+    const data = getTeamData(team.id);
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'teamlens-overview-row';
+    row.style.setProperty('--cat-color', team.color);
+    row.style.setProperty('--cat-soft',  team.soft);
+    row.setAttribute('data-status', data.status);
+    row.addEventListener('click', () => setActiveTeam(team.id));
+
+    // Color dot + team name
+    const head = document.createElement('div');
+    head.className = 'teamlens-overview-head';
+    head.innerHTML = `
+      <span class="teamlens-overview-dot"></span>
+      <span class="teamlens-overview-name">${escapeHtml(team.label)}</span>
+    `;
+
+    // Status pill (read-only, matches the in-team pill style)
+    const status = document.createElement('span');
+    status.className = 'teamlens-overview-status';
+    status.dataset.status = data.status;
+    status.innerHTML = `
+      <span class="lens-status-dot"></span>
+      <span>${STATUS_LABELS[data.status] || 'Idle'}</span>
+    `;
+
+    // Optional one-line note (truncated by CSS)
+    const note = document.createElement('span');
+    note.className = 'teamlens-overview-note';
+    note.textContent = data.statusNote || '—';
+
+    // Counts on the right
+    const counts = document.createElement('div');
+    counts.className = 'teamlens-overview-counts';
+    if (data.waiting.length) {
+      const c = document.createElement('span');
+      c.className = 'teamlens-overview-count';
+      c.title = `${data.waiting.length} waiting`;
+      c.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg><span>${data.waiting.length}</span>`;
+      counts.appendChild(c);
+    }
+    if (data.links.length) {
+      const c = document.createElement('span');
+      c.className = 'teamlens-overview-count';
+      c.title = `${data.links.length} link${data.links.length === 1 ? '' : 's'}`;
+      c.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg><span>${data.links.length}</span>`;
+      counts.appendChild(c);
+    }
+
+    row.append(head, status, note, counts);
+    teamLensOverview.appendChild(row);
+  });
+}
+
+function renderTeamLensBody() {
+  const teamId = getActiveTeamId();
+  // --- No team active: choose empty hint vs. overview based on whether
+  //     any teams exist at all. ---
+  if (!teamId) {
+    teamLensBody.hidden = true;
+    teamLensBody.style.removeProperty('--cat-color');
+    teamLensBody.style.removeProperty('--cat-soft');
+    if (teams.length === 0) {
+      teamLensEmpty.classList.remove('hidden');
+      teamLensOverview.hidden = true;
+      teamLensMeta.textContent = 'No teams yet';
+    } else {
+      teamLensEmpty.classList.add('hidden');
+      teamLensOverview.hidden = false;
+      teamLensMeta.textContent = `${teams.length} team${teams.length === 1 ? '' : 's'} · overview`;
+      renderTeamLensOverview();
+    }
+    return;
+  }
+  // --- Team active: drill into the focus card. ---
+  const team = teams.find((t) => t.id === teamId);
+  teamLensEmpty.classList.add('hidden');
+  teamLensOverview.hidden = true;
+  teamLensBody.hidden = false;
+  teamLensMeta.textContent = team ? team.label : '';
+  if (team) {
+    teamLensBody.style.setProperty('--cat-color', team.color);
+    teamLensBody.style.setProperty('--cat-soft', team.soft);
+  }
+  const data = getTeamData(teamId);
+  renderStatus(data);
+  renderWaiting(data);
+  renderLensLinks(data);
+}
+
+function renderTeamLens() {
+  renderTeamLensChipRow();
+  renderTeamLensBody();
+}
+
+// --- Event bindings ---
+lensStatusPill?.addEventListener('click', cycleStatus);
+
+lensStatusNote?.addEventListener('input', () => {
+  const teamId = getActiveTeamId();
+  if (!teamId) return;
+  getTeamData(teamId).statusNote = lensStatusNote.value;
+  store.save();
+});
+
+lensWaitingForm?.addEventListener('submit', (e) => {
+  e.preventDefault();
+  addWaiting(lensWaitingInput.value);
+  lensWaitingInput.value = '';
+  lensWaitingInput.focus();
+});
+
+lensLinksForm?.addEventListener('submit', (e) => {
+  e.preventDefault();
+  addLensLink(lensLinkLabel.value, lensLinkUrl.value);
+  lensLinkLabel.value = '';
+  lensLinkUrl.value = '';
+  lensLinkLabel.focus();
+});
+
+// Team chip row — same horizontal reorder as the category rows. The `teams`
+// array drives both chip order and overview-row order, so a reorder is
+// visible in both states. Declared here (not next to the other setupDnd
+// calls) so `teamLensChipRow` is past its TDZ when this runs.
+setupDnd({
+  container: teamLensChipRow,
+  itemSelector: '.teamlens-chip-wrap',
+  getList: () => teams,
+  axis: 'x',
+  onChange: () => { store.save(); renderTeamLens(); },
+});
+
 // --- Init ---
 async function init() {
   await store.load();
@@ -2865,6 +3336,7 @@ async function init() {
   renderQuickLinks();
   renderSavedLinks();
   renderJournal();
+  renderTeamLens();
   guardPlaceholders();
 }
 init();
