@@ -2049,9 +2049,111 @@ function hostname(url) {
   try { return new URL(url).hostname.replace(/^www\./, ''); }
   catch { return ''; }
 }
+
+// Folds vendor subdomains down to the brand domain so the favicon comes back
+// branded. Without this, e.g. restaurant365.zoom.us returns a blank or
+// per-tenant icon — we want the Zoom logo. Pattern is "anything except a
+// single dot" before a known brand suffix. Add a row when a new vendor
+// turns up with tenant-style URLs.
+const FAVICON_ALIASES = [
+  // Meetings & calls
+  { match: /(^|\.)zoom\.us$/i,                   canonical: 'zoom.us'              },
+  { match: /(^|\.)webex\.com$/i,                 canonical: 'webex.com'            },
+  { match: /(^|\.)teams\.microsoft\.com$/i,      canonical: 'microsoft.com'        },
+  { match: /(^|\.)meet\.google\.com$/i,          canonical: 'google.com'           },
+
+  // Atlassian (Jira / Confluence)
+  { match: /(^|\.)atlassian\.net$/i,             canonical: 'atlassian.com'        },
+  { match: /(^|\.)jira\.com$/i,                  canonical: 'atlassian.com'        },
+
+  // Chat & comms
+  { match: /(^|\.)slack\.com$/i,                 canonical: 'slack.com'            },
+  { match: /(^|\.)discord\.com$/i,               canonical: 'discord.com'          },
+
+  // Docs & whiteboards
+  { match: /(^|\.)notion\.site$/i,               canonical: 'notion.so'            },
+  { match: /(^|\.)sharepoint\.com$/i,            canonical: 'sharepoint.com'       },
+  { match: /(^|\.)figma\.com$/i,                 canonical: 'figma.com'            },
+  { match: /(^|\.)miro\.com$/i,                  canonical: 'miro.com'             },
+  { match: /(^|\.)lucid\.app$/i,                 canonical: 'lucid.app'            },
+  { match: /(^|\.)loom\.com$/i,                  canonical: 'loom.com'             },
+  { match: /(^|\.)coda\.io$/i,                   canonical: 'coda.io'              },
+  { match: /(^|\.)airtable\.com$/i,              canonical: 'airtable.com'         },
+  { match: /(^|\.)box\.com$/i,                   canonical: 'box.com'              },
+  { match: /(^|\.)dropbox\.com$/i,               canonical: 'dropbox.com'          },
+
+  // Code hosting / CI
+  { match: /(^|\.)github\.io$/i,                 canonical: 'github.com'           },
+  { match: /(^|\.)githubusercontent\.com$/i,     canonical: 'github.com'           },
+  { match: /(^|\.)gitlab\.io$/i,                 canonical: 'gitlab.com'           },
+  { match: /(^|\.)bitbucket\.io$/i,              canonical: 'bitbucket.org'        },
+  { match: /(^|\.)circleci\.com$/i,              canonical: 'circleci.com'         },
+
+  // Project / PM
+  { match: /(^|\.)linear\.app$/i,                canonical: 'linear.app'           },
+  { match: /(^|\.)asana\.com$/i,                 canonical: 'asana.com'            },
+  { match: /(^|\.)monday\.com$/i,                canonical: 'monday.com'           },
+  { match: /(^|\.)trello\.com$/i,                canonical: 'trello.com'           },
+  { match: /(^|\.)shortcut\.com$/i,              canonical: 'shortcut.com'         },
+
+  // Observability / on-call
+  { match: /(^|\.)datadoghq\.com$/i,             canonical: 'datadoghq.com'        },
+  { match: /(^|\.)datadoghq\.eu$/i,              canonical: 'datadoghq.com'        },
+  { match: /(^|\.)pagerduty\.com$/i,             canonical: 'pagerduty.com'        },
+  { match: /(^|\.)opsgenie\.com$/i,              canonical: 'opsgenie.com'         },
+  { match: /(^|\.)newrelic\.com$/i,              canonical: 'newrelic.com'         },
+  { match: /(^|\.)sentry\.io$/i,                 canonical: 'sentry.io'            },
+  { match: /(^|\.)grafana\.net$/i,               canonical: 'grafana.com'          },
+  { match: /(^|\.)splunkcloud\.com$/i,           canonical: 'splunk.com'           },
+  { match: /(^|\.)honeycomb\.io$/i,              canonical: 'honeycomb.io'         },
+
+  // Cloud consoles
+  { match: /(^|\.)console\.aws\.amazon\.com$/i,  canonical: 'aws.amazon.com'       },
+  { match: /(^|\.)signin\.aws\.amazon\.com$/i,   canonical: 'aws.amazon.com'       },
+  { match: /(^|\.)portal\.azure\.com$/i,         canonical: 'azure.microsoft.com'  },
+  { match: /(^|\.)azurewebsites\.net$/i,         canonical: 'azure.microsoft.com'  },
+  { match: /(^|\.)cloud\.google\.com$/i,         canonical: 'cloud.google.com'     },
+  { match: /(^|\.)firebaseapp\.com$/i,           canonical: 'firebase.google.com'  },
+
+  // Data warehouses & BI
+  { match: /(^|\.)snowflakecomputing\.com$/i,    canonical: 'snowflake.com'        },
+  { match: /(^|\.)databricks\.com$/i,            canonical: 'databricks.com'       },
+  { match: /(^|\.)looker\.com$/i,                canonical: 'looker.com'           },
+  { match: /(^|\.)tableau\.com$/i,               canonical: 'tableau.com'          },
+
+  // CRM / support
+  { match: /(^|\.)my\.salesforce\.com$/i,        canonical: 'salesforce.com'       },
+  { match: /(^|\.)lightning\.force\.com$/i,      canonical: 'salesforce.com'       },
+  { match: /(^|\.)force\.com$/i,                 canonical: 'salesforce.com'       },
+  { match: /(^|\.)zendesk\.com$/i,               canonical: 'zendesk.com'          },
+  { match: /(^|\.)hubspot\.com$/i,               canonical: 'hubspot.com'          },
+  { match: /(^|\.)intercom\.com$/i,              canonical: 'intercom.com'         },
+
+  // PaaS / hosting
+  { match: /(^|\.)heroku\.com$/i,                canonical: 'heroku.com'           },
+  { match: /(^|\.)herokuapp\.com$/i,             canonical: 'heroku.com'           },
+  { match: /(^|\.)vercel\.app$/i,                canonical: 'vercel.com'           },
+  { match: /(^|\.)netlify\.app$/i,               canonical: 'netlify.com'          },
+  { match: /(^|\.)fly\.dev$/i,                   canonical: 'fly.io'               },
+  { match: /(^|\.)render\.com$/i,                canonical: 'render.com'           },
+  { match: /(^|\.)supabase\.co$/i,               canonical: 'supabase.com'         },
+  { match: /(^|\.)cloudflare\.com$/i,            canonical: 'cloudflare.com'       },
+
+  // HR / payroll
+  { match: /(^|\.)bamboohr\.com$/i,              canonical: 'bamboohr.com'         },
+  { match: /(^|\.)greenhouse\.io$/i,             canonical: 'greenhouse.io'        },
+  { match: /(^|\.)lever\.co$/i,                  canonical: 'lever.co'             },
+  { match: /(^|\.)workday\.com$/i,               canonical: 'workday.com'          },
+  { match: /(^|\.)gusto\.com$/i,                 canonical: 'gusto.com'            },
+];
+function canonicalFaviconHost(host) {
+  for (const a of FAVICON_ALIASES) if (a.match.test(host)) return a.canonical;
+  return host;
+}
 function faviconUrl(url) {
   const host = hostname(url);
-  return host ? `https://www.google.com/s2/favicons?domain=${host}&sz=64` : '';
+  if (!host) return '';
+  return `https://www.google.com/s2/favicons?domain=${canonicalFaviconHost(host)}&sz=64`;
 }
 function initialOf(s) {
   return (s || '?').trim().charAt(0).toUpperCase();
