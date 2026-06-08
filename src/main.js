@@ -3386,6 +3386,9 @@ function guardPlaceholders() {
     editTitle, editUrl,
     syncGistId, syncToken,
     categoryName, pickerHex,
+    // Team Lens fields — extensions also scan these on focus changes
+    // (e.g. when the rename popover blurs on Escape).
+    lensStatusNote, lensWaitingInput, lensLinkLabel, lensLinkUrl,
   ].filter(Boolean);
   const original = new Map(inputs.map((el) => [el, el.getAttribute('placeholder') || '']));
 

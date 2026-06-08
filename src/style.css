@@ -2788,6 +2788,9 @@ body.meta-down .teamlens-chip-wrap:hover .category-chip-delete,
 }
 .link-search-clear:hover { color: var(--text); background: var(--surface-3); }
 .link-search-clear svg { width: 12px; height: 12px; }
+/* `display: grid` above overrides the HTML `hidden` attribute — restore it
+   explicitly so the × stays gone when the search input is empty. */
+.link-search-clear[hidden] { display: none; }
 
 /* ---------- Bookmarks toolbar (search + add) ---------- */
 .link-toolbar {
