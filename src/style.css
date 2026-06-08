@@ -920,7 +920,8 @@ body {
   z-index: 1;
 }
 .teamlens-chip-rename svg { width: 9px; height: 9px; }
-.teamlens-chip-wrap:hover .teamlens-chip-rename,
+body.meta-down .teamlens-chip-wrap:hover .teamlens-chip-rename,
+body.meta-down .category-chip-wrap:hover .teamlens-chip-rename,
 .teamlens-chip-rename:focus-visible {
   opacity: 1;
   transform: scale(1);
@@ -2243,8 +2244,12 @@ body {
   transition: all var(--t-fast) var(--ease);
   z-index: 1;
 }
-.category-chip-wrap:hover .category-chip-delete,
-.teamlens-chip-wrap:hover .category-chip-delete,
+/* All tag chips guard their edit/delete behind the ⌘/Ctrl modifier so
+   plain filter-clicks don't show them. The .meta-down class is toggled
+   in JS based on the live metaKey/ctrlKey state. Focus reveal is kept
+   for keyboard users so they're not locked out. */
+body.meta-down .category-chip-wrap:hover .category-chip-delete,
+body.meta-down .teamlens-chip-wrap:hover .category-chip-delete,
 .category-chip-delete:focus-visible {
   opacity: 1;
   transform: scale(1);

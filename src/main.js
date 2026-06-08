@@ -428,9 +428,23 @@ function buildCategoryChip(cat, { selected, onClick }) {
   chip.dataset.category = cat.id;
   applyCategoryVars(chip, cat.id);
   chip.setAttribute('aria-pressed', selected ? 'true' : 'false');
-  chip.innerHTML = `<span class="chip-dot"></span><span>${escapeHtml(cat.label)}</span>`;
+  chip.innerHTML = `<span class="chip-dot"></span><span class="chip-label">${escapeHtml(cat.label)}</span>`;
   chip.addEventListener('click', () => onClick(cat.id));
   return chip;
+}
+
+function renameCategory(id, kind, nextLabel) {
+  const list = getCategories(kind);
+  const cat = list.find((c) => c.id === id);
+  if (!cat) return;
+  const trimmed = (nextLabel || '').trim();
+  if (!trimmed || trimmed === cat.label) return;
+  cat.label = trimmed;
+  store.save();
+  renderAllCategoryRows();
+  // Labels appear in group headers + popovers, so refresh dependent renders.
+  if (kind === 'task') renderTodos();
+  else if (kind === 'link') { renderQuickLinks(); renderSavedLinks(); }
 }
 
 // Generic chip-row renderer. Two callers (tasks + links) pass their own
@@ -439,13 +453,15 @@ function renderCategoryRow(container, opts) {
   if (!container) return;
   container.innerHTML = '';
 
-  // Each chip is wrapped so it can carry a tiny × for deletion on hover
-  // (a <button> inside another <button> would be invalid HTML).
+  // Each chip is wrapped so it can carry tiny ✎ / × buttons for rename and
+  // delete (a <button> inside another <button> would be invalid HTML).
+  // Both buttons are gated behind ⌘/Ctrl+hover — see the .meta-down CSS.
   getCategories(opts.kind).forEach((cat) => {
     const chip = buildCategoryChip(cat, {
       selected: opts.selectedId === cat.id,
       onClick: opts.onSelectChip,
     });
+    const labelSpan = chip.querySelector('.chip-label');
     const wrap = document.createElement('span');
     wrap.className = 'category-chip-wrap';
     // Make the wrap draggable so users can reorder tags in place. The setupDnd
@@ -454,6 +470,20 @@ function renderCategoryRow(container, opts) {
     // iterate taskCategories / linkCategories in array order).
     wrap.draggable = true;
     wrap.dataset.id = cat.id;
+
+    // ✎ — rename (top-left)
+    const renameBtn = document.createElement('button');
+    renameBtn.type = 'button';
+    renameBtn.className = 'teamlens-chip-rename';
+    renameBtn.title = `Rename "${cat.label}"`;
+    renameBtn.setAttribute('aria-label', `Rename ${cat.label} tag`);
+    renameBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4z"/></svg>';
+    renameBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      enterChipRename(labelSpan, cat.label, (next) => renameCategory(cat.id, opts.kind, next));
+    });
+
+    // × — delete (top-right)
     const x = document.createElement('button');
     x.type = 'button';
     x.className = 'category-chip-delete';
@@ -464,7 +494,7 @@ function renderCategoryRow(container, opts) {
       e.stopPropagation();
       deleteCategory(cat.id, opts.kind);
     });
-    wrap.append(chip, x);
+    wrap.append(renameBtn, chip, x);
     container.appendChild(wrap);
   });
 
@@ -2976,11 +3006,10 @@ function renameTeam(id, nextLabel) {
 }
 
 // Put a chip's label into inline-edit mode. Enter saves, Escape reverts,
-// blur saves (or reverts if the value is empty / unchanged). Selects the
-// existing text so the user can start typing to replace.
-function enterChipRename(labelSpan, team) {
+// blur saves (or reverts if the value is empty / unchanged). The caller
+// supplies onCommit so this helper is agnostic to teams vs. categories.
+function enterChipRename(labelSpan, original, onCommit) {
   if (labelSpan.isContentEditable) return;
-  const original = team.label;
   labelSpan.contentEditable = 'true';
   labelSpan.spellcheck = false;
   labelSpan.focus();
@@ -2997,7 +3026,7 @@ function enterChipRename(labelSpan, team) {
     labelSpan.contentEditable = 'false';
     if (commit) {
       const next = labelSpan.textContent.trim();
-      if (next && next !== original) renameTeam(team.id, next);
+      if (next && next !== original) onCommit(next);
       else labelSpan.textContent = original;
     } else {
       labelSpan.textContent = original;
@@ -3043,7 +3072,7 @@ function renderTeamLensChipRow() {
     renameBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4z"/></svg>';
     renameBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      enterChipRename(labelSpan, team);
+      enterChipRename(labelSpan, team.label, (next) => renameTeam(team.id, next));
     });
 
     const x = document.createElement('button');
@@ -3390,6 +3419,16 @@ function guardPlaceholders() {
 
 // Keep greeting fresh when the tab regains focus across hour boundaries
 document.addEventListener('visibilitychange', () => { if (!document.hidden) updateHeader(); });
+
+// Track ⌘/Ctrl state so the Team Lens chips only reveal their edit /
+// delete affordances while the modifier is held. Clears on tab blur so
+// the class doesn't stick after a window switch.
+function syncMetaClass(e) {
+  document.body.classList.toggle('meta-down', !!(e.metaKey || e.ctrlKey));
+}
+document.addEventListener('keydown', syncMetaClass);
+document.addEventListener('keyup', syncMetaClass);
+window.addEventListener('blur', () => document.body.classList.remove('meta-down'));
 
 // Best-effort flush of any pending debounced save before the tab closes.
 // Write localStorage synchronously (works on static hosts) and also fire a keepalive
