@@ -1341,6 +1341,9 @@ const journalNext      = $('#journal-next');
 const journalDateBtn   = $('#journal-date');
 
 let currentJournalDate = isoLocalDate(new Date());
+// Snapshot of "today" at the last render — used by maybeRollOverJournalDate
+// to detect a local-midnight crossing while the tab was left open.
+let lastKnownToday     = currentJournalDate;
 
 // ISO date in the user's local timezone — toISOString would give UTC, which
 // would shift midnight for anyone west of GMT and corrupt the per-date map.
@@ -1502,6 +1505,18 @@ function renderJournalHeader() {
 function renderJournal() {
   renderJournalHeader();
   renderJournalList();
+}
+
+// If local midnight has passed since we last looked, advance the journal view
+// so users who left the tab open overnight don't keep staring at yesterday's
+// records. Only snaps forward when the user was pinned to "today"; a manually
+// selected past date is preserved.
+function maybeRollOverJournalDate() {
+  const today = isoLocalDate(new Date());
+  if (today === lastKnownToday) return;
+  if (currentJournalDate === lastKnownToday) currentJournalDate = today;
+  lastKnownToday = today;
+  renderJournal();
 }
 
 journalForm?.addEventListener('submit', (e) => {
@@ -3522,8 +3537,19 @@ function guardPlaceholders() {
   });
 }
 
-// Keep greeting fresh when the tab regains focus across hour boundaries
-document.addEventListener('visibilitychange', () => { if (!document.hidden) updateHeader(); });
+// Keep greeting fresh when the tab regains focus across hour boundaries, and
+// roll the Today's Work view over to the new day if the tab was hidden across
+// local midnight.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  updateHeader();
+  maybeRollOverJournalDate();
+});
+
+// Same rollover, but for the case where the tab stays visible all night and
+// visibilitychange never fires. Once a minute is plenty — the rollover window
+// is one day, not one second.
+setInterval(() => { updateHeader(); maybeRollOverJournalDate(); }, 60_000);
 
 // Track ⌘/Ctrl state so the Team Lens chips only reveal their edit /
 // delete affordances while the modifier is held. Clears on tab blur so
