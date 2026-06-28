@@ -330,9 +330,17 @@ function setTheme(theme) {
   store.state.theme = theme;
   store.save();
 }
-themeToggle.addEventListener('click', () => {
+themeToggle.addEventListener('click', (e) => {
   const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-  setTheme(next);
+  // Anchor the radial reveal to the click point; fall back to the toggle's
+  // center for keyboard activations (which arrive with clientX/Y of 0).
+  const rect = themeToggle.getBoundingClientRect();
+  const x = e.clientX || rect.left + rect.width / 2;
+  const y = e.clientY || rect.top + rect.height / 2;
+  document.documentElement.style.setProperty('--theme-x', `${x}px`);
+  document.documentElement.style.setProperty('--theme-y', `${y}px`);
+  if (!document.startViewTransition) { setTheme(next); return; }
+  document.startViewTransition(() => setTheme(next));
 });
 
 // --- Toast ---
@@ -1344,6 +1352,9 @@ let currentJournalDate = isoLocalDate(new Date());
 // Snapshot of "today" at the last render — used by maybeRollOverJournalDate
 // to detect a local-midnight crossing while the tab was left open.
 let lastKnownToday     = currentJournalDate;
+// IDs of entries added since the last render — used to play the slide-in
+// animation only on freshly created rows, not on every full-list re-render.
+const freshJournalIds  = new Set();
 
 // ISO date in the user's local timezone — toISOString would give UTC, which
 // would shift midnight for anyone west of GMT and corrupt the per-date map.
@@ -1381,7 +1392,9 @@ function addJournalEntry(text) {
   const trimmed = text.trim();
   if (!trimmed) return;
   const arr = getJournalEntries(currentJournalDate).slice();
-  arr.push({ id: Date.now() + Math.random(), text: trimmed });
+  const entry = { id: Date.now() + Math.random(), text: trimmed };
+  arr.push(entry);
+  freshJournalIds.add(entry.id);
   commitJournalEntries(currentJournalDate, arr);
   renderJournalList();
 }
@@ -1394,11 +1407,13 @@ function appendTaskCompletionToJournal(todo) {
   const existing = getJournalEntries(today);
   if (existing.some((e) => e.fromTaskId === todo.id)) return; // already logged
   const arr = existing.slice();
-  arr.push({
+  const entry = {
     id: Date.now() + Math.random(),
     text: todo.text,
     fromTaskId: todo.id,
-  });
+  };
+  arr.push(entry);
+  freshJournalIds.add(entry.id);
   commitJournalEntries(today, arr);
   // Re-render the panel if the user happens to be looking at today; if they're
   // viewing a past date, the new entry waits silently in today's bucket.
@@ -1438,6 +1453,10 @@ function renderJournalList() {
 function buildJournalEntry(entry) {
   const li = document.createElement('li');
   li.className = 'journal-entry';
+  if (freshJournalIds.has(entry.id)) {
+    li.classList.add('is-new');
+    freshJournalIds.delete(entry.id);
+  }
   li.dataset.id = entry.id;
   li.draggable = true;
 

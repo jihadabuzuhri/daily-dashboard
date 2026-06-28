@@ -3146,6 +3146,49 @@ body.meta-down .teamlens-chip-wrap:hover .category-chip-delete,
   100% { transform: scale(1); }
 }
 
+/* ============================================================
+   Motion — entrance choreography + theme cross-fade.
+   The global prefers-reduced-motion block below collapses these
+   to ~0ms for users who opt out, so we don't gate each one.
+   ============================================================ */
+
+@keyframes panel-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: none; }
+}
+.panel {
+  animation: panel-rise 560ms var(--ease) both;
+}
+.journal-panel   { animation-delay:  40ms; }
+.teamlens-panel  { animation-delay: 130ms; }
+.tasks-panel     { animation-delay: 220ms; }
+.links-panel     { animation-delay: 310ms; }
+
+@keyframes item-drop-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: none; }
+}
+.journal-entry.is-new {
+  animation: item-drop-in 320ms var(--ease) both;
+}
+
+/* View Transitions — radial reveal from the theme toggle on supporting
+   browsers. The fallback (Safari today) is the existing color transitions. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-old(root) { z-index: 1; }
+::view-transition-new(root) {
+  z-index: 2;
+  animation: theme-reveal 520ms var(--ease) both;
+}
+@keyframes theme-reveal {
+  from { clip-path: circle(0% at var(--theme-x, 50%) var(--theme-y, 50%)); }
+  to   { clip-path: circle(140% at var(--theme-x, 50%) var(--theme-y, 50%)); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
