@@ -10,7 +10,7 @@ A single-page dashboard for daily tasks, journaling, team status, and bookmarks.
 — no framework, no TypeScript, no backend. Installable as a PWA, works offline, and can optionally
 sync across devices via a private GitHub gist.
 
-**[Live demo →](https://jihadabuzuhri.github.io/daily-dashboard/)**
+**[Project page →](https://jihadabuzuhri.github.io/daily-dashboard/)** · **[Live app →](https://jihadabuzuhri.github.io/daily-dashboard/app/)**
 
 ## What problem it solves
 
@@ -21,7 +21,7 @@ list of who owes you what. Daily Dashboard puts them on one page you can leave o
 It's built for people who want that without signing up for a hosted service or standing up a
 server. There is no account, no telemetry, and no backend — your data lives in your browser, in a
 local file while developing, or in a private gist you own and can revoke at any time. The whole app
-is three files (`index.html`, `src/main.js`, `src/style.css`), so it's small enough to read end to
+is three files (`app/index.html`, `src/main.js`, `src/style.css`), so it's small enough to read end to
 end and change to fit how you actually work.
 
 ## Contents
@@ -59,7 +59,7 @@ cd daily-dashboard && npm install
 npm run dev
 ```
 
-Open <http://localhost:5173>.
+Open <http://localhost:5173/app/> for the app, or <http://localhost:5173> for the landing page.
 
 ### Scripts
 
@@ -139,14 +139,19 @@ Global (skipped while typing in an input/textarea/contentEditable):
 ## Project structure
 
 ```
-index.html          Static markup. Elements are addressed by fixed IDs.
+app/index.html      The app. Static markup; elements are addressed by fixed IDs.
 src/main.js         All application behavior, organized into flat sections.
 src/style.css       All styling. Themes are CSS custom properties on :root / [data-theme].
+index.html          The landing page, served at the site root.
+src/landing.css     Landing-page styling. Mirrors the app's design tokens.
+src/landing.js      Landing-page theme toggle. Independent of the app's state.
 vite.config.js      Vite config, PWA plugin, and the dev-only /api/store middleware.
 scripts/            Icon generation script.
-public/             Favicon, touch icon, generated PWA icons.
+public/             Favicon, touch icon, generated PWA icons, landing screenshots.
 .github/workflows/  GitHub Pages deployment.
 ```
+
+The build has two HTML entries: the landing page at the site root and the app under `/app/`.
 
 [CLAUDE.md](CLAUDE.md) documents the internal architecture — persistence tiers, the render/event
 model, drag-and-drop, and the legacy-data migrations — in more depth than this README.
@@ -213,8 +218,9 @@ Pushing to `main` triggers `.github/workflows/deploy.yml`, which builds and publ
 
 One-time setup on the GitHub repo: **Settings → Pages → Source = GitHub Actions**.
 
-The site is served at `https://<user>.github.io/<repo>/`. The Vite config uses `base: './'`, so
-asset URLs are relative and the build works at any subpath.
+The landing page is served at `https://<user>.github.io/<repo>/` and the app at
+`https://<user>.github.io/<repo>/app/`. The Vite config uses `base: './'`, so asset URLs are
+relative and the build works at any subpath.
 
 Because the build is a static bundle with no server requirement, it also deploys unchanged to
 Netlify, Vercel, Cloudflare Pages, or any static host.

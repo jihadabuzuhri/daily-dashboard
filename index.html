@@ -3,406 +3,274 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Daily — Dashboard</title>
+  <title>Daily Dashboard — a local-first dashboard for your workday</title>
   <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
-  <!-- PWA -->
   <meta name="theme-color" content="#0e0e12" media="(prefers-color-scheme: dark)" />
   <meta name="theme-color" content="#f6f4ef" media="(prefers-color-scheme: light)" />
-  <meta name="description" content="A quiet command center for tasks and bookmarks." />
-  <!-- iOS add-to-home-screen support -->
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="Daily" />
-  <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+  <meta name="description" content="Tasks, a daily journal, team status, and bookmarks on one page. Vanilla JS, no account, no telemetry, no backend — your data stays in your browser. MIT licensed." />
+
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Daily Dashboard" />
+  <meta property="og:description" content="Tasks, a daily journal, team status, and bookmarks on one page. No account, no telemetry, no backend. MIT licensed." />
+  <meta property="og:url" content="https://jihadabuzuhri.github.io/daily-dashboard/" />
+  <meta property="og:image" content="https://jihadabuzuhri.github.io/daily-dashboard/screens/dashboard-dark.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/src/style.css" />
+  <link rel="stylesheet" href="/src/landing.css" />
+  <script>
+    // Resolve the theme before first paint so there is no flash of the wrong
+    // palette. Stored under its own key — the app's own state lives in
+    // `daily-dashboard:store` and must not be touched from here.
+    try {
+      var t = localStorage.getItem('daily-dashboard:landing-theme');
+      if (!t) t = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', t);
+    } catch (e) { document.documentElement.setAttribute('data-theme', 'dark'); }
+  </script>
 </head>
 <body>
   <div class="aurora"></div>
   <div class="grain"></div>
 
-  <div id="app">
-    <header class="header">
-      <div class="header-text">
-        <p class="date" id="date"></p>
-        <h1 class="greeting" id="greeting"></h1>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-head">
+    <a class="wordmark" href="./">
+      <img src="./favicon.svg" alt="" width="26" height="26" />
+      <span>Daily Dashboard</span>
+    </a>
+    <nav class="site-nav" aria-label="Primary">
+      <a href="#screens">Screens</a>
+      <a href="#features">Features</a>
+      <a href="#data">Your data</a>
+      <a href="https://github.com/jihadabuzuhri/daily-dashboard">GitHub</a>
+    </nav>
+    <button type="button" id="theme-toggle" class="icon-btn" aria-label="Toggle light and dark theme">
+      <svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M18.7 5.3l-1.6 1.6M6.9 17.1l-1.6 1.6"/>
+      </svg>
+      <svg class="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M20 14.5A8.2 8.2 0 0 1 9.5 4a8.3 8.3 0 1 0 10.5 10.5z"/>
+      </svg>
+    </button>
+  </header>
+
+  <main id="main">
+
+    <!-- ---------- Hero ---------- -->
+    <section class="hero">
+      <p class="eyebrow">Local-first · MIT licensed</p>
+      <h1>Your whole workday on <em>one page</em>.</h1>
+      <p class="lede">
+        Tasks, a daily journal, team status, and the links you actually open — in a single
+        page you can leave in a tab. No account to create, no telemetry, no backend to run.
+        Your data stays in your browser.
+      </p>
+
+      <div class="cta-row">
+        <a class="btn btn-primary" href="./app/">Open the live app</a>
+        <a class="btn btn-secondary" href="https://github.com/jihadabuzuhri/daily-dashboard">View the source</a>
+        <a class="btn btn-ghost" href="https://github.com/jihadabuzuhri/daily-dashboard/blob/main/CONTRIBUTING.md">Read CONTRIBUTING.md</a>
       </div>
-      <div class="header-actions">
-        <div class="focus-pill" id="focus-pill" hidden role="status" aria-live="polite">
-          <span class="focus-pill-ring" aria-hidden="true">
-            <svg viewBox="0 0 36 36" aria-hidden="true">
-              <circle class="focus-pill-track" cx="18" cy="18" r="15.9" fill="none" stroke-width="3"/>
-              <circle class="focus-pill-progress" cx="18" cy="18" r="15.9" fill="none" stroke-width="3" pathLength="100"/>
-            </svg>
-          </span>
-          <div class="focus-pill-text">
-            <span class="focus-pill-task" id="focus-pill-task"></span>
-            <span class="focus-pill-time" id="focus-pill-time">25:00</span>
-          </div>
-          <button type="button" class="focus-pill-stop" id="focus-pill-stop" aria-label="Stop focus session" title="Stop focus session">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5"/></svg>
-          </button>
-        </div>
-        <button class="install-btn" id="install-btn" aria-label="Install app" title="Install app" hidden>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><polyline points="7 10 12 15 17 10"/><path d="M5 21h14"/></svg>
-          <span class="install-btn-label">Install</span>
-        </button>
-        <button class="sync-btn" id="sync-btn" aria-label="Cloud sync settings" title="Cloud sync">
-          <span class="sync-pip" id="sync-pip" data-state="local" aria-hidden="true"></span>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.5 19a4.5 4.5 0 0 0 0-9c-.2-.1-.4-.1-.6-.2A6 6 0 0 0 5 11c0 .2 0 .4.1.6A4 4 0 0 0 6 19"/></svg>
-        </button>
-        <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
-          <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
-          <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-        </button>
+
+      <ul class="fact-row">
+        <li><strong>No account</strong><span>nothing to sign up for</span></li>
+        <li><strong>No telemetry</strong><span>nothing is phoned home</span></li>
+        <li><strong>No backend</strong><span>a static bundle on any host</span></li>
+        <li><strong>Three files</strong><span>HTML, one JS, one CSS</span></li>
+      </ul>
+    </section>
+
+    <!-- ---------- Screenshots ---------- -->
+    <section id="screens" class="section">
+      <h2 class="section-title">The app, both ways round</h2>
+      <p class="section-lede">
+        Light and dark themes ship together; the toggle is a keystroke away (<kbd>D</kbd>).
+        These are screenshots of the running app with sample data.
+      </p>
+      <div class="shots">
+        <figure>
+          <img src="./screens/dashboard-dark.png" width="1600" height="1756" loading="lazy" decoding="async"
+               alt="Daily Dashboard in its dark theme: a Today's Work journal panel, a Team Lens panel showing an on-track status with a waiting-on list, a Tasks panel with tagged items, and a Quick Links grid." />
+          <figcaption>Dark theme — the default.</figcaption>
+        </figure>
+        <figure>
+          <img src="./screens/dashboard-light.png" width="1600" height="1756" loading="lazy" decoding="async"
+               alt="The same dashboard in its light theme, with a warm paper-toned background and the same four panels." />
+          <figcaption>Light theme — same layout, warmer palette.</figcaption>
+        </figure>
       </div>
-    </header>
+    </section>
 
-    <main class="main">
-      <section class="panel journal-panel">
-        <div class="panel-head journal-head">
-          <div class="panel-title">
-            <h2>Today's Work</h2>
-            <div class="journal-nav" role="group" aria-label="Choose date">
-              <button type="button" class="journal-arrow" id="journal-prev" aria-label="Previous day" title="Previous day">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 6 9 12 15 18"/></svg>
-              </button>
-              <button type="button" class="journal-date-btn" id="journal-date" title="Pick a date">Today</button>
-              <button type="button" class="journal-arrow" id="journal-next" aria-label="Next day" title="Next day">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"/></svg>
-              </button>
-            </div>
-          </div>
-        </div>
-        <form class="add-task journal-add" id="journal-form">
-          <svg class="add-task-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-          <input type="text" id="journal-input" placeholder="What did you accomplish?" autocomplete="off" />
-        </form>
-        <ul class="journal-list" id="journal-list"></ul>
-        <p class="empty-state journal-empty" id="journal-empty">
-          <span class="empty-icon">·</span>
-          <span class="empty-title">Nothing logged yet</span>
-          <span class="empty-hint">Type something and press <kbd>Enter</kbd></span>
-        </p>
-      </section>
+    <!-- ---------- Features ---------- -->
+    <section id="features" class="section">
+      <h2 class="section-title">What's on the page</h2>
+      <div class="grid">
 
-      <section class="panel teamlens-panel">
-        <div class="panel-head">
-          <div class="panel-title">
-            <h2>Team Lens</h2>
-            <span class="panel-meta" id="teamlens-meta">No team selected</span>
-          </div>
-        </div>
+        <article class="card">
+          <h3>Today's Work</h3>
+          <p>
+            A full-width journal for what you actually got done, with a date picker to walk back
+            through previous days. Checking off a task logs it into today's entry automatically,
+            so the record builds itself.
+          </p>
+        </article>
 
-        <div class="teamlens-chip-row" id="teamlens-chip-row" role="toolbar" aria-label="Select team"></div>
+        <article class="card">
+          <h3>Team Lens</h3>
+          <p>
+            Per-team status — <em>Idle, On track, At risk, Blocked</em> — with a one-line note, a
+            <strong>waiting on</strong> list for whatever is blocking you, and a grid of that team's
+            runbooks and dashboards. An overview mode summarises every team at once.
+          </p>
+        </article>
 
-        <p class="empty-state teamlens-empty" id="teamlens-empty">
-          <span class="empty-icon">·</span>
-          <span class="empty-title">No teams yet</span>
-          <span class="empty-hint">Add a team with the + button above</span>
-        </p>
+        <article class="card">
+          <h3>Tasks</h3>
+          <p>
+            Inline editing, drag-and-drop reordering, an archive for finished work, and a 4-second
+            undo on every delete. Tag tasks with your own colours and group the list by tag.
+          </p>
+        </article>
 
-        <!-- Overview: shown when no team is filtered but teams exist —
-             quick summary of every team's status, click a row to focus. -->
-        <div class="teamlens-overview" id="teamlens-overview" hidden></div>
+        <article class="card">
+          <h3>Focus sessions</h3>
+          <p>
+            Start a 15, 25, or 50-minute countdown on any task. A focus pill with a progress ring
+            follows you around the app, and the full-screen view minimises when you want to keep
+            working.
+          </p>
+        </article>
 
-        <div class="teamlens-body" id="teamlens-body" hidden>
-          <!-- Status pill — at-a-glance health of this team's work -->
-          <div class="lens-status-card">
-            <button type="button" class="lens-status-pill" id="lens-status-pill" data-status="idle" aria-label="Cycle status">
-              <span class="lens-status-dot"></span>
-              <span class="lens-status-text" id="lens-status-text">Idle</span>
-            </button>
-            <input type="text" id="lens-status-note" class="lens-status-note" placeholder="What's happening this week?" autocomplete="off" />
-          </div>
+        <article class="card">
+          <h3>Quick Links &amp; Saved for Later</h3>
+          <p>
+            A pinned grid for the handful of links you open every day, and a collapsible archive
+            for everything else. Both are searchable, taggable, and reorderable by drag.
+          </p>
+        </article>
 
-          <!-- Waiting on — what other people owe me before I can ship -->
-          <section class="lens-card">
-            <header class="lens-card-head">
-              <span class="lens-card-label">Waiting on</span>
-              <span class="lens-card-count" id="lens-waiting-count"></span>
-            </header>
-            <ul class="lens-waiting" id="lens-waiting"></ul>
-            <p class="lens-card-empty" id="lens-waiting-empty">Nothing — you're not blocked.</p>
-            <form class="lens-mini-form" id="lens-waiting-form">
-              <span class="lens-mini-prefix">+</span>
-              <input type="text" id="lens-waiting-input" placeholder="Item or person…" autocomplete="off" />
-            </form>
-          </section>
+        <article class="card">
+          <h3>Installable &amp; offline</h3>
+          <p>
+            A service worker caches the app shell, so it opens without a network. Install it from
+            Chromium's install button, or via <em>Share → Add to Home Screen</em> on iOS Safari.
+          </p>
+        </article>
 
-          <!-- Links — runbooks / dashboards / repos for fast pivot -->
-          <section class="lens-card">
-            <header class="lens-card-head">
-              <span class="lens-card-label">Links</span>
-              <span class="lens-card-count" id="lens-links-count"></span>
-            </header>
-            <div class="lens-links" id="lens-links"></div>
-            <p class="lens-card-empty" id="lens-links-empty">No links yet.</p>
-            <form class="lens-mini-form lens-link-form" id="lens-links-form">
-              <input type="text" id="lens-link-label" placeholder="Label" autocomplete="off" />
-              <input type="url" id="lens-link-url" placeholder="https://…" autocomplete="off" />
-              <button type="submit" class="lens-link-add" aria-label="Add link">+</button>
-            </form>
-          </section>
-        </div>
-      </section>
-
-      <section class="panel tasks-panel">
-        <div class="panel-head">
-          <div class="panel-title">
-            <h2>Tasks</h2>
-            <span class="panel-meta" id="tasks-meta"></span>
-          </div>
-          <div class="progress" id="progress" aria-hidden="true">
-            <div class="progress-fill" id="progress-fill"></div>
-          </div>
-        </div>
-
-        <form class="add-task" id="todo-form">
-          <svg class="add-task-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-          <input type="text" id="todo-input" placeholder="Add a task" autocomplete="off" />
-          <button type="button" id="task-tag-pill" class="add-task-tag" aria-label="Tag for new task"></button>
-          <kbd class="add-task-kbd" aria-hidden="true">N</kbd>
-        </form>
-
-        <div class="category-row" id="category-row" role="toolbar" aria-label="Tag for new task"></div>
-
-        <ul class="todo-list" id="todo-list"></ul>
-        <p class="empty-state" id="todo-empty">
-          <span class="empty-icon">·</span>
-          <span class="empty-title">Nothing on the list</span>
-          <span class="empty-hint">Press <kbd>N</kbd> to add one</span>
-        </p>
-
-        <details class="archive" id="archive" hidden>
-          <summary class="archive-summary">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="archive-caret"><polyline points="9 6 15 12 9 18"/></svg>
-            <span class="archive-label">Archived</span>
-            <span class="archive-count" id="archive-count">0</span>
-          </summary>
-          <ul class="archive-list" id="archive-list"></ul>
-        </details>
-      </section>
-
-      <section class="panel links-panel quick-panel">
-        <div class="panel-head">
-          <div class="panel-title">
-            <h2>Quick Links</h2>
-            <span class="panel-meta" id="quick-meta"></span>
-          </div>
-          <div class="link-toolbar">
-            <div class="link-search">
-              <svg class="link-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-              <input type="search" id="quick-search" placeholder="Search quick links" autocomplete="off" />
-              <button type="button" class="link-search-clear" id="quick-search-clear" aria-label="Clear search" hidden>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
-              </button>
-            </div>
-            <button type="button" class="btn-add-link" id="quick-add-btn" aria-label="Add quick link">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-              <span>Add</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="category-row" id="link-category-row" role="toolbar" aria-label="Tag for quick links"></div>
-
-        <div class="link-grid" id="quick-grid"></div>
-        <p class="empty-state" id="quick-empty">
-          <span class="empty-icon">·</span>
-          <span class="empty-title">No quick links yet</span>
-          <span class="empty-hint">Press <kbd>L</kbd> to add one</span>
-        </p>
-
-        <details class="link-archive" id="saved-archive" hidden>
-          <summary class="archive-summary">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="archive-caret"><polyline points="9 6 15 12 9 18"/></svg>
-            <span class="archive-label">Saved for Later</span>
-            <span class="archive-count" id="saved-count">0</span>
-          </summary>
-          <div class="link-grid link-grid-saved" id="saved-grid"></div>
-        </details>
-      </section>
-    </main>
-
-    <footer class="footer">
-      <div class="footer-keys">
-        <span><kbd>N</kbd> task</span>
-        <span class="dot"></span>
-        <span><kbd>L</kbd> quick link</span>
-        <span class="dot"></span>
-        <span><kbd>/</kbd> search</span>
-        <span class="dot"></span>
-        <span><kbd>D</kbd> theme</span>
       </div>
-    </footer>
+    </section>
 
-    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <!-- ---------- Data ---------- -->
+    <section id="data" class="section">
+      <h2 class="section-title">Where your data actually lives</h2>
+      <p class="section-lede">
+        Three tiers, resolved in this order at startup. There is no account system, no analytics,
+        and no server component beyond the optional gist you own.
+      </p>
 
-    <dialog class="edit-dialog" id="sync-dialog" aria-labelledby="sync-dialog-title">
-      <form method="dialog" class="edit-form" id="sync-form">
-        <header class="edit-header">
-          <h3 id="sync-dialog-title">Cloud sync</h3>
-          <button type="button" class="dialog-close" id="sync-dialog-close" aria-label="Close">&times;</button>
-        </header>
-        <p class="field-help">
-          Sync tasks and bookmarks across devices via a private GitHub gist.
-          See the README for one-time setup.
-        </p>
-        <label class="field">
-          <span class="field-label">Gist ID</span>
-          <input type="text" id="sync-gist-id" autocomplete="off" spellcheck="false" placeholder="a1b2c3d4e5f6..." />
-        </label>
-        <label class="field">
-          <span class="field-label">Personal access token</span>
-          <input type="password" id="sync-token" autocomplete="off" spellcheck="false" placeholder="github_pat_..." />
-        </label>
-        <p class="sync-status" id="sync-status"></p>
-        <footer class="edit-footer">
-          <button type="button" class="btn-ghost" id="sync-clear">Disable</button>
-          <button type="button" class="btn-ghost" id="sync-refresh">Refresh</button>
-          <button type="submit" class="btn-primary" id="sync-save">Save</button>
-        </footer>
-      </form>
-    </dialog>
-
-    <dialog class="edit-dialog" id="install-dialog" aria-labelledby="install-dialog-title">
-      <form method="dialog" class="edit-form">
-        <header class="edit-header">
-          <h3 id="install-dialog-title">Install on iPhone</h3>
-          <button type="button" class="dialog-close" id="install-dialog-close" aria-label="Close">&times;</button>
-        </header>
-        <p class="field-help">
-          iOS doesn't expose an automatic install button. To add Daily to your Home Screen:
-        </p>
-        <ol class="install-steps">
-          <li>Tap the <strong>Share</strong> button
-            <svg class="ios-share-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4"/><polyline points="7 9 12 4 17 9"/><path d="M5 20h14"/></svg>
-            at the bottom of Safari.
-          </li>
-          <li>Scroll down and tap <strong>Add to Home Screen</strong>.</li>
-          <li>Tap <strong>Add</strong> in the top-right corner.</li>
-        </ol>
-        <p class="field-help" style="margin-top: 4px;">
-          Make sure you're in <strong>Safari</strong> — other browsers on iOS don't support this.
-        </p>
-        <footer class="edit-footer">
-          <button type="submit" class="btn-primary">Got it</button>
-        </footer>
-      </form>
-    </dialog>
-
-    <dialog class="edit-dialog" id="category-dialog" aria-labelledby="category-dialog-title">
-      <form method="dialog" class="edit-form" id="category-form">
-        <header class="edit-header">
-          <h3 id="category-dialog-title">New tag</h3>
-          <button type="button" class="dialog-close" id="category-dialog-close" aria-label="Close">&times;</button>
-        </header>
-        <label class="field">
-          <span class="field-label">Name</span>
-          <input type="text" id="category-name" placeholder="e.g. Errands" autocomplete="off" maxlength="20" required />
-        </label>
-        <div class="field">
-          <span class="field-label">Color</span>
-          <div class="color-swatches" id="color-swatches" role="radiogroup" aria-label="Tag color"></div>
-          <div class="color-picker-panel" id="color-picker-panel" hidden>
-            <div class="picker-sv" id="picker-sv" role="slider" aria-label="Saturation and value" tabindex="0">
-              <div class="picker-sv-thumb" id="picker-sv-thumb"></div>
-            </div>
-            <div class="picker-hue" id="picker-hue" role="slider" aria-label="Hue" tabindex="0">
-              <div class="picker-hue-thumb" id="picker-hue-thumb"></div>
-            </div>
-            <div class="picker-foot">
-              <div class="picker-preview" id="picker-preview" aria-hidden="true"></div>
-              <input type="text" id="picker-hex" class="picker-hex" maxlength="7" autocomplete="off" spellcheck="false" aria-label="Hex color" />
-            </div>
+      <ol class="tiers">
+        <li>
+          <span class="tier-num">1</span>
+          <div>
+            <h3>A local file, while you develop</h3>
+            <p>
+              Under <code>npm run dev</code>, a Vite middleware reads and writes
+              <code>data/store.json</code> on your own disk. Plain JSON you can read, diff, or
+              delete.
+            </p>
           </div>
-        </div>
-        <footer class="edit-footer">
-          <button type="button" class="btn-ghost" id="category-cancel">Cancel</button>
-          <button type="submit" class="btn-primary" id="category-save">Create</button>
-        </footer>
-      </form>
-    </dialog>
-
-    <dialog class="focus-dialog" id="focus-dialog" aria-labelledby="focus-dialog-task">
-      <button type="button" class="focus-dialog-close" id="focus-dialog-close" aria-label="Minimize">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg>
-      </button>
-      <div class="focus-dialog-inner">
-        <p class="focus-dialog-eyebrow" id="focus-dialog-eyebrow">FOCUS</p>
-        <h2 class="focus-dialog-task" id="focus-dialog-task"></h2>
-
-        <!-- Picker state: shown before a session starts -->
-        <div class="focus-picker" id="focus-picker" role="radiogroup" aria-label="Session duration">
-          <button type="button" class="focus-picker-chip" data-min="15">15<span>min</span></button>
-          <button type="button" class="focus-picker-chip is-selected" data-min="25">25<span>min</span></button>
-          <button type="button" class="focus-picker-chip" data-min="50">50<span>min</span></button>
-          <label class="focus-picker-custom">
-            <input type="number" id="focus-picker-custom" min="1" max="180" placeholder="—" inputmode="numeric" autocomplete="off" aria-label="Custom duration in minutes" />
-            <span>min</span>
-          </label>
-        </div>
-
-        <!-- Running state: ring + countdown -->
-        <div class="focus-ring-wrap">
-          <div class="focus-ring-aura" aria-hidden="true"></div>
-          <svg class="focus-ring" viewBox="0 0 120 120" aria-hidden="true">
-            <defs>
-              <linearGradient id="focusRingGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%"/>
-                <stop offset="100%"/>
-              </linearGradient>
-            </defs>
-            <circle class="focus-ring-track" cx="60" cy="60" r="54" fill="none" stroke-width="2"/>
-            <circle class="focus-ring-fill"  cx="60" cy="60" r="54" fill="none" stroke-width="4" pathLength="100" stroke-linecap="round"/>
-          </svg>
-          <div class="focus-ring-center">
-            <div class="focus-ring-time" id="focus-dialog-time">25:00</div>
-            <div class="focus-ring-sub"  id="focus-dialog-sub">25 minutes</div>
+        </li>
+        <li>
+          <span class="tier-num">2</span>
+          <div>
+            <h3>A private GitHub gist, if you opt in</h3>
+            <p>
+              Optional cross-device sync. You create the private gist and a fine-grained token
+              scoped to gists only, paste them in once per browser, and can revoke them whenever
+              you like. Conflict policy is last-write-wins.
+            </p>
           </div>
-        </div>
+        </li>
+        <li>
+          <span class="tier-num">3</span>
+          <div>
+            <h3><code>localStorage</code>, everywhere else</h3>
+            <p>
+              The fallback on a deployed site, and the write-through cache for the gist tier — so
+              your edits survive even with no network.
+            </p>
+          </div>
+        </li>
+      </ol>
 
-        <!-- Action rows — one shown per state (CSS toggles via .is-running on the dialog) -->
-        <div class="focus-dialog-actions focus-actions-picker" id="focus-actions-picker">
-          <button type="button" class="focus-dialog-start" id="focus-dialog-start">Start session</button>
-        </div>
-        <div class="focus-dialog-actions focus-actions-running" id="focus-actions-running">
-          <button type="button" class="focus-dialog-minimize" id="focus-dialog-minimize">Minimize</button>
-          <button type="button" class="focus-dialog-stop" id="focus-dialog-stop">End session</button>
-        </div>
+      <p class="fineprint">
+        The dev file store and a deployed site's gist/localStorage are separate buckets and do not
+        auto-sync.
+      </p>
+    </section>
+
+    <!-- ---------- Build / contribute ---------- -->
+    <section id="build" class="section">
+      <h2 class="section-title">Small enough to read end to end</h2>
+      <p class="section-lede">
+        Vanilla JavaScript on Vite. No framework, no TypeScript, no build config beyond
+        <code>vite.config.js</code>. The whole application is three files, which means you can
+        understand it in an afternoon and change it to fit how you actually work.
+      </p>
+
+      <div class="code-block">
+<pre><code>git clone https://github.com/jihadabuzuhri/daily-dashboard.git
+cd daily-dashboard &amp;&amp; npm install
+npm run dev</code></pre>
       </div>
-    </dialog>
 
-    <dialog class="edit-dialog" id="edit-dialog" aria-labelledby="edit-dialog-title">
-      <form method="dialog" class="edit-form" id="edit-form">
-        <header class="edit-header">
-          <h3 id="edit-dialog-title">Edit bookmark</h3>
-          <button type="button" class="dialog-close" id="edit-dialog-close" aria-label="Close">&times;</button>
-        </header>
-        <label class="field">
-          <span class="field-label">Name</span>
-          <input type="text" id="edit-title" placeholder="e.g. GitHub" autocomplete="off" required />
-        </label>
-        <label class="field">
-          <span class="field-label">URL</span>
-          <input type="url" id="edit-url" placeholder="https://example.com" autocomplete="off" required />
-        </label>
-        <div class="field">
-          <span class="field-label">Tag</span>
-          <button type="button" id="edit-tag-pill" class="form-tag-pill" aria-label="Tag for link"></button>
-        </div>
-        <footer class="edit-footer">
-          <button type="button" class="btn-ghost" id="edit-cancel">Cancel</button>
-          <button type="submit" class="btn-primary" id="edit-save">Save</button>
-        </footer>
-      </form>
-    </dialog>
-  </div>
+      <p class="section-lede">
+        Requires Node <code>^20.19.0</code> or <code>&gt;=22.12.0</code>. No database, API key, or
+        backend service. Pull requests are built on Node 20 and 22 by CI.
+      </p>
 
-  <script type="module" src="/src/main.js"></script>
+      <div class="grid grid-links">
+        <a class="card card-link" href="https://github.com/jihadabuzuhri/daily-dashboard/blob/main/CONTRIBUTING.md">
+          <h3>Contributing guide →</h3>
+          <p>Local setup, branch and commit conventions, the manual verification checklist, and the architecture constraints new code should stay inside.</p>
+        </a>
+        <a class="card card-link" href="https://github.com/jihadabuzuhri/daily-dashboard/issues">
+          <h3>Issues →</h3>
+          <p>Bug reports and feature requests, both with templates. For anything larger than a small fix, open an issue first to discuss the approach.</p>
+        </a>
+        <a class="card card-link" href="https://github.com/jihadabuzuhri/daily-dashboard/blob/main/CLAUDE.md">
+          <h3>Architecture notes →</h3>
+          <p>The persistence tiers, the render and event model, drag-and-drop, and the legacy-data migrations, in more depth than the README.</p>
+        </a>
+        <a class="card card-link" href="https://github.com/jihadabuzuhri/daily-dashboard/blob/main/SECURITY.md">
+          <h3>Security policy →</h3>
+          <p>How to report a vulnerability privately, plus a Code of Conduct that applies to every space in the project.</p>
+        </a>
+      </div>
+    </section>
+
+    <section class="closing">
+      <h2>Try it in a tab you were going to leave open anyway.</h2>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="./app/">Open the live app</a>
+        <a class="btn btn-secondary" href="https://github.com/jihadabuzuhri/daily-dashboard">View the source</a>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="site-foot">
+    <p>
+      <a href="https://github.com/jihadabuzuhri/daily-dashboard/blob/main/LICENSE">MIT licensed</a>
+      · <a href="https://github.com/jihadabuzuhri/daily-dashboard">github.com/jihadabuzuhri/daily-dashboard</a>
+    </p>
+    <p class="foot-note">Built with vanilla JS and Vite.</p>
+  </footer>
+
+  <script type="module" src="/src/landing.js"></script>
 </body>
 </html>

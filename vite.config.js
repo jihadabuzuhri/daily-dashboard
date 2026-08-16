@@ -126,10 +126,60 @@ function fileStorePlugin() {
   };
 }
 
+// vite-plugin-pwa injects the manifest link and the service-worker registration
+// with paths relative to the *page* ("./manifest.webmanifest", "./sw.js"). Those
+// are correct for the landing page at the site root, but the app is served from
+// /app/, where they resolve to /app/manifest.webmanifest and /app/sw.js — both
+// 404, and the worker would register under the /app/ scope. Rewrite them to
+// point back up at the root for any HTML entry in a subdirectory.
+//
+// This runs in closeBundle rather than transformIndexHtml because the PWA plugin
+// injects those tags after every transformIndexHtml hook has already run — by
+// then the only copy of the markup is the file on disk.
+function fixNestedPwaPaths() {
+  let outDir;
+  return {
+    name: 'fix-nested-pwa-paths',
+    apply: 'build',
+    configResolved(config) {
+      outDir = path.resolve(config.root, config.build.outDir);
+    },
+    closeBundle: {
+      order: 'post',
+      sequential: true,
+      async handler() {
+        const entries = await fs.readdir(outDir, { withFileTypes: true, recursive: true });
+        for (const entry of entries) {
+          if (!entry.isFile() || entry.name !== 'index.html') continue;
+          const file = path.join(entry.parentPath ?? entry.path, entry.name);
+          const depth = path.relative(outDir, file).split(path.sep).length - 1;
+          if (depth === 0) continue;
+          const up = '../'.repeat(depth);
+          const html = await fs.readFile(file, 'utf-8');
+          const fixed = html
+            .replace(/(href|src)="\.\/(manifest\.webmanifest|sw\.js|registerSW\.js)"/g, `$1="${up}$2"`)
+            .replace(/register\(\s*'\.\/sw\.js'\s*,\s*\{\s*scope:\s*'\.\/'\s*\}\s*\)/g,
+              `register('${up}sw.js', { scope: '${up}' })`);
+          if (fixed !== html) await fs.writeFile(file, fixed);
+        }
+      },
+    },
+  };
+}
+
 export default defineConfig({
   // Relative base so the build works at any subpath (e.g. GitHub Pages at /<repo>/).
   base: './',
   build: {
+    rollupOptions: {
+      // Two HTML entries: the marketing/landing page at the site root, and the
+      // app itself under /app/. Keeping the app in its own directory means the
+      // landing page owns the root URL without either one shadowing the other.
+      input: {
+        landing: path.resolve(__dirname, 'index.html'),
+        app: path.resolve(__dirname, 'app/index.html'),
+      },
+    },
     // Vite's default CSS minifier (esbuild) aggressively collapses prefix
     // families: with the `modules` cssTarget it dropped the unprefixed
     // `backdrop-filter` because Safari 14 wants `-webkit-` and FF78 doesn't
@@ -155,6 +205,9 @@ export default defineConfig({
     VitePWA({
       // Auto-update the service worker when a new build is deployed. No prompts.
       registerType: 'autoUpdate',
+      // Inline the registration snippet rather than emitting registerSW.js, so
+      // fixNestedPwaPaths() can rewrite the sw.js path per page (see above).
+      injectRegister: 'inline',
       // Disable SW in dev so the file-store middleware works normally.
       // Set `devOptions.enabled: true` if you need to debug the SW locally.
       devOptions: { enabled: false },
@@ -163,8 +216,12 @@ export default defineConfig({
         name: 'Daily — Dashboard',
         short_name: 'Daily',
         description: 'A quiet command center for tasks and bookmarks.',
-        // Use relative scope/start_url so the manifest works under GitHub Pages subpaths.
-        start_url: './',
+        // Relative scope/start_url so the manifest works under GitHub Pages
+        // subpaths. The manifest is emitted at the site root, so scope './'
+        // covers both the landing page and the app; start_url points at the
+        // app so launching the installed PWA opens the dashboard, not the
+        // landing page.
+        start_url: './app/',
         scope: './',
         display: 'standalone',
         orientation: 'any',
@@ -179,6 +236,10 @@ export default defineConfig({
       workbox: {
         // Cache the hashed bundles + index.html for offline app-shell.
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        // Landing-page screenshots are ~230 KB and only ever shown at the site
+        // root. Keeping them out of the precache keeps the app's offline
+        // install payload to the app shell itself.
+        globIgnores: ['**/screens/**'],
         // Never cache the dev file-store endpoint or gist API calls.
         navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
@@ -210,5 +271,7 @@ export default defineConfig({
         ],
       },
     }),
+    // After VitePWA so its injected tags are already present in the HTML.
+    fixNestedPwaPaths(),
   ],
 });
