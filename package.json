@@ -1,9 +1,32 @@
 {
   "name": "daily-dashboard",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "A single-page dashboard for daily tasks, journaling, team status, and bookmarks. Vanilla JS on Vite, installable as a PWA, works offline, with optional GitHub gist sync.",
   "license": "MIT",
+  "author": "Jihad Abu Zuhri",
   "type": "module",
+  "homepage": "https://jihadabuzuhri.github.io/daily-dashboard/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jihadabuzuhri/daily-dashboard.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jihadabuzuhri/daily-dashboard/issues"
+  },
+  "keywords": [
+    "dashboard",
+    "todo",
+    "journal",
+    "bookmarks",
+    "pwa",
+    "offline-first",
+    "vanilla-js",
+    "vite",
+    "local-first"
+  ],
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
