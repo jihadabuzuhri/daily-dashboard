@@ -121,3 +121,7 @@ If the gist is empty on first save, the app uploads your current local state. Ot
 ### Pip in the header
 
 The dot on the cloud icon reflects sync state at a glance: muted = local-only, accent (pulsing) = syncing, green = synced, red = error.
+
+## License
+
+Licensed under the MIT License. See [LICENSE](LICENSE) for the full text.
