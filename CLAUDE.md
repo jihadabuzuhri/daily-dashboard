@@ -35,7 +35,7 @@ Resolved at startup in this order by `store.load()` in [src/main.js](src/main.js
 
 ### Shared state, in-place mutation
 
-`store.state` is `{ todos, archivedTodos, quickLinks, savedLinks, theme, taskCategories, linkCategories, groupByCategory, groupLinksByCategory }`. Module-level arrays (`todos`, `quickLinks`, `taskCategories`, …) are *references* into `store.state` — mutations are visible to the serializer without copying. `applyData(state, data)` deliberately uses `arr.splice(0, len, ...newItems)` to refill arrays in place so those references stay valid across loads.
+`store.state` is `{ todos, archivedTodos, quickLinks, savedLinks, theme, taskCategories, linkCategories, groupByCategory, groupLinksByCategory, journal, teamLens }`. `journal` is a date-keyed map `{ "YYYY-MM-DD": Entry[] }` where each entry is `{ id, text }`; `teamLens` is `{ activeTeamId, teams, perTeam }` with `perTeam` keyed by team ID (see the Team Lens section in `main.js`). Module-level arrays (`todos`, `quickLinks`, `taskCategories`, …) are *references* into `store.state` — mutations are visible to the serializer without copying. `applyData(state, data)` deliberately uses `arr.splice(0, len, ...newItems)` to refill arrays in place so those references stay valid across loads.
 
 ### Legacy migrations (run on every load)
 

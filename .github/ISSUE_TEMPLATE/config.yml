@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Contributing guide
+    url: https://github.com/jihadabuzuhri/daily-dashboard/blob/main/CONTRIBUTING.md
+    about: How to set up the project locally and submit a pull request.

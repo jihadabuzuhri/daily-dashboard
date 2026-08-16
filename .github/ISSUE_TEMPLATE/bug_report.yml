@@ -1,0 +1,86 @@
+name: Bug report
+description: Report something that isn't working as expected
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. Please search
+        [existing issues](../?q=is%3Aissue) first to avoid duplicates.
+
+        **Never include your GitHub personal access token, gist ID, or private gist contents** in
+        this report — redact them from any logs or screenshots.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, and what you expected instead.
+      placeholder: Deleting a task shows the undo toast, but clicking Undo does nothing.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Start from a fresh page load.
+      placeholder: |
+        1. Load the dashboard
+        2. Add a task "Test"
+        3. Delete it
+        4. Click "Undo" in the toast
+        5. The task does not come back
+    validations:
+      required: true
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: How are you running the app?
+      description: Behavior differs — the dev file store only exists under `npm run dev`.
+      options:
+        - Development server (npm run dev)
+        - Local production build (npm run build + npm run preview)
+        - Deployed site (GitHub Pages or other static host)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: storage
+    attributes:
+      label: Which storage tier are you on?
+      description: Shown by the pip on the cloud icon in the header, if you're unsure.
+      options:
+        - Dev file store (data/store.json)
+        - GitHub gist sync
+        - localStorage only
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and OS
+      placeholder: Chrome 141 on macOS 15.6
+    validations:
+      required: true
+
+  - type: textarea
+    id: console
+    attributes:
+      label: Console output
+      description: Any errors or warnings from the browser devtools console. This is rendered as code, so no backticks needed.
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshots or additional context
+      description: Screenshots are especially helpful for visual or layout bugs.
+    validations:
+      required: false
