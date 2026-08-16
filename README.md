@@ -1,51 +1,85 @@
+<div align="center">
+
+<img src="public/favicon.svg" alt="" width="72" height="72">
+
 # Daily Dashboard
 
+**Tasks, a daily journal, team status, and bookmarks — on one page you can leave open in a tab.**
+
+Vanilla JS on Vite. No framework, no TypeScript, no backend.<br>
+No account, no telemetry — your data stays in your browser.
+
 [![CI](https://github.com/jihadabuzuhri/daily-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/jihadabuzuhri/daily-dashboard/actions/workflows/ci.yml)
+[![Deploy](https://github.com/jihadabuzuhri/daily-dashboard/actions/workflows/deploy.yml/badge.svg)](https://github.com/jihadabuzuhri/daily-dashboard/actions/workflows/deploy.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Built with Vite](https://img.shields.io/badge/built%20with-Vite-646CFF.svg)](https://vite.dev)
-[![PWA](https://img.shields.io/badge/PWA-installable-5A0FC8.svg)](#pwa--offline)
+[![PWA](https://img.shields.io/badge/PWA-installable-5A0FC8.svg)](#features)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
-A single-page dashboard for daily tasks, journaling, team status, and bookmarks. Vanilla JS on Vite
-— no framework, no TypeScript, no backend. Installable as a PWA, works offline, and can optionally
-sync across devices via a private GitHub gist.
+**[Live app](https://jihadabuzuhri.github.io/daily-dashboard/app/)**
+· [Project page](https://jihadabuzuhri.github.io/daily-dashboard/)
+· [Quick start](#quick-start)
+· [Contributing](CONTRIBUTING.md)
 
-**[Project page →](https://jihadabuzuhri.github.io/daily-dashboard/)** · **[Live app →](https://jihadabuzuhri.github.io/daily-dashboard/app/)**
+<br>
 
-## What problem it solves
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/assets/hero-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset=".github/assets/hero-light.png">
+  <img alt="Daily Dashboard: a Today's Work journal panel beside a Team Lens panel showing an on-track status pill, a waiting-on list, and per-team links." src=".github/assets/hero-dark.png" width="900">
+</picture>
+
+<sub>The running app with sample data. Light and dark themes ship together.</sub>
+
+</div>
+
+---
+
+## Why it exists
 
 The things you need to stay oriented during a workday are usually scattered: a to-do app, a notes
 file for what you actually got done, a browser bookmark bar you've stopped pruning, and a mental
-list of who owes you what. Daily Dashboard puts them on one page you can leave open in a tab.
+list of who owes you what. Daily Dashboard puts them on one page.
 
 It's built for people who want that without signing up for a hosted service or standing up a
 server. There is no account, no telemetry, and no backend — your data lives in your browser, in a
 local file while developing, or in a private gist you own and can revoke at any time. The whole app
-is three files (`app/index.html`, `src/main.js`, `src/style.css`), so it's small enough to read end to
-end and change to fit how you actually work.
+is three files (`app/index.html`, `src/main.js`, `src/style.css`), so it's small enough to read end
+to end and change to fit how you actually work.
+
+## At a glance
+
+| | |
+| --- | --- |
+| **Today's Work** | A journal for what you actually got done. Completed tasks log themselves into today's entry. |
+| **Team Lens** | Per-team status pill, a *waiting on* list, and the links you pivot to most. |
+| **Tasks** | Tags, grouping, drag-and-drop, an archive, undo on delete, and optional focus sessions. |
+| **Quick Links & Saved for Later** | A pinned grid plus a searchable archive, both taggable and reorderable. |
+| **Local-first storage** | A local file in dev, `localStorage` everywhere else, and an optional private gist. |
+| **PWA & offline** | Installable, and the app shell is cached so it opens without a network. |
 
 ## Contents
 
 - [Quick start](#quick-start)
 - [Features](#features)
-- [Project structure](#project-structure)
-- [Data persistence](#data-persistence)
+- [Where your data lives](#where-your-data-lives)
 - [Cross-device sync via Gist](#cross-device-sync-via-gist)
-- [Deployment (GitHub Pages)](#deployment-github-pages)
+- [Project structure](#project-structure)
+- [Deployment](#deployment)
 - [Contributing](#contributing)
 - [License](#license)
 
 ## Quick start
 
-### Prerequisites
+**Prerequisites**
 
-- **Node.js** `^20.19.0` or `>=22.12.0` (required by Vite 8 — check with `node -v`, or run `nvm use` to pick up [.nvmrc](.nvmrc))
+- **Node.js** `^20.19.0` or `>=22.12.0` — required by Vite 8. Check with `node -v`, or run `nvm use` to pick up [.nvmrc](.nvmrc).
 - **npm** 10 or newer
 - A modern evergreen browser
 
 No database, API key, or backend service is needed to run the app.
 
-### Install and run
+**Install and run**
 
 ```bash
 git clone https://github.com/jihadabuzuhri/daily-dashboard.git
@@ -61,7 +95,7 @@ npm run dev
 
 Open <http://localhost:5173/app/> for the app, or <http://localhost:5173> for the landing page.
 
-### Scripts
+**Scripts**
 
 | Command | What it does |
 | --- | --- |
@@ -70,25 +104,36 @@ Open <http://localhost:5173/app/> for the app, or <http://localhost:5173> for th
 | `npm run preview` | Serves the built `dist/` locally (without the dev file-store middleware). |
 | `npm run icons` | Regenerates PWA icons under `public/icons/` from `public/favicon.svg`. |
 
-There are no automated test, lint, or typecheck scripts — changes are verified manually in the
-browser. See [CONTRIBUTING.md](CONTRIBUTING.md) for the checklist.
+> [!NOTE]
+> There are no automated test, lint, or typecheck scripts — changes are verified manually in the
+> browser. See [CONTRIBUTING.md](CONTRIBUTING.md) for the checklist.
 
 ## Features
 
-### Today's Work (journal)
+<details open>
+<summary><b>Today's Work</b> — the journal that writes half of itself</summary>
+
 - Full-width panel at the top of the dashboard for logging what you accomplished each day.
 - Custom date picker with previous/next arrows and a calendar popover to jump to any day.
 - Completed tasks are auto-logged into today's entry, so the journal builds itself as you check things off.
 - Inline edit, delete, and reorder via drag-and-drop.
 
-### Team Lens
+</details>
+
+<details>
+<summary><b>Team Lens</b> — status and blockers, per team</summary>
+
 - Per-team status card: a colored status pill (*Idle / On track / At risk / Blocked*) with a one-line note.
 - **Waiting on** list — the people or items blocking you, tracked per team.
 - Per-team **links** grid for the runbooks, dashboards, or repos you pivot to most.
 - Overview mode summarizes every team's status at a glance; click a row to focus one team.
 - Fully independent of the Tasks panel.
 
-### Tasks
+</details>
+
+<details>
+<summary><b>Tasks</b> — with tags, grouping, and focus sessions</summary>
+
 - Add, edit (inline `contentEditable`), check off, archive, and delete tasks.
 - Progress bar and live count of remaining items in the panel header.
 - 4-second undo toast after a delete restores the item to its original position.
@@ -100,7 +145,11 @@ browser. See [CONTRIBUTING.md](CONTRIBUTING.md) for the checklist.
   - Header "focus pill" stays visible across the app with a progress ring and a stop button.
   - Full-screen focus dialog with animated ring while running; minimize to keep working.
 
-### Quick Links & Saved for Later
+</details>
+
+<details>
+<summary><b>Quick Links & Saved for Later</b> — the bookmark bar you'd actually prune</summary>
+
 - Two parallel link collections: pinned **Quick Links** grid up top, collapsible **Saved for Later** archive below.
 - Favicons fetched from Google's `s2/favicons` service (cached by the service worker).
 - Add / edit dialog handles both kinds with one form.
@@ -109,77 +158,83 @@ browser. See [CONTRIBUTING.md](CONTRIBUTING.md) for the checklist.
 - **Group by tag** toggle for the quick links grid.
 - Drag-and-drop reorder, inline edit, undo-delete (same 4-second toast).
 
-### Tags (shared system)
+</details>
+
+<details>
+<summary><b>Tags</b> — two independent datasets, one color system</summary>
+
 - Two independent tag datasets: one for tasks, one for links — renames on one side never bleed to the other.
 - Each tag is `{ name, color }`. Color comes from preset swatches **or** a custom HSV picker (S/V plane + hue slider + hex input).
 - Categories drive accent colors throughout the UI via CSS custom properties.
 
-### Theme
+</details>
+
+<details>
+<summary><b>Theme</b> — light and dark, persisted</summary>
+
 - Light/dark themes via a header toggle (`D` shortcut). The chosen theme is persisted alongside everything else.
 - Subtle background aurora + film-grain layers respond to the active theme.
 
-### Keyboard shortcuts
-Global (skipped while typing in an input/textarea/contentEditable):
-- `N` — focus the new-task input
-- `L` — open the add-bookmark dialog
-- `/` — focus the link search
-- `Escape` — clear / blur the search
-- `D` — toggle theme
+</details>
 
-### PWA & offline
+<details>
+<summary><b>PWA & offline</b> — installable, works without a network</summary>
+
 - Installable on Chromium browsers via the **Install** button (uses `beforeinstallprompt`).
 - iOS fallback dialog explains the *Share → Add to Home Screen* flow for Safari.
 - Service worker (Workbox) caches the app shell + Google Fonts + favicon proxy for offline use.
 - `autoUpdate` registration: new builds activate on next reload.
 - iOS web-app meta tags, theme-color, and Apple touch icon are all wired up.
 
-### Browser-extension input guard
+</details>
+
+<details>
+<summary><b>Browser-extension input guard</b> — a small defense against form-fillers</summary>
+
 - A `MutationObserver` pins every input's original `placeholder` and scrubs the strings `"null"` / `"undefined"` if a password manager or form-filler injects them.
 
-## Project structure
+</details>
 
-```
-app/index.html      The app. Static markup; elements are addressed by fixed IDs.
-src/main.js         All application behavior, organized into flat sections.
-src/style.css       All styling. Themes are CSS custom properties on :root / [data-theme].
-index.html          The landing page, served at the site root.
-src/landing.css     Landing-page styling. Mirrors the app's design tokens.
-src/landing.js      Landing-page theme toggle. Independent of the app's state.
-vite.config.js      Vite config, PWA plugin, and the dev-only /api/store middleware.
-scripts/            Icon generation script.
-public/             Favicon, touch icon, generated PWA icons, landing screenshots.
-.github/workflows/  GitHub Pages deployment.
-```
+### Keyboard shortcuts
 
-The build has two HTML entries: the landing page at the site root and the app under `/app/`.
+Global, and skipped while you're typing in an input, textarea, or `contentEditable`:
 
-[CLAUDE.md](CLAUDE.md) documents the internal architecture — persistence tiers, the render/event
-model, drag-and-drop, and the legacy-data migrations — in more depth than this README.
+| Key | Action |
+| :---: | --- |
+| <kbd>N</kbd> | Focus the new-task input |
+| <kbd>L</kbd> | Open the add-bookmark dialog |
+| <kbd>/</kbd> | Focus the link search |
+| <kbd>Esc</kbd> | Clear / blur the search |
+| <kbd>D</kbd> | Toggle theme |
 
-## Data persistence
+## Where your data lives
 
 The app stores tasks, journal entries, team status, bookmarks, tags, theme, and grouping
 preferences in three tiers, resolved at startup in this order:
 
-1. **`data/store.json`** via a Vite dev-server middleware ([vite.config.js](vite.config.js)). Active only under `npm run dev`.
-2. **A private GitHub gist** — opt-in cross-device sync. Configure per-browser via the cloud icon in the header. See below.
-3. **`localStorage`** (key `daily-dashboard:store`) — per-browser fallback, also the synchronous write-through cache for the gist tier.
+| | Tier | Where | When it's used |
+| :---: | --- | --- | --- |
+| 1 | **Local file** | `data/store.json`, via a Vite dev-server middleware ([vite.config.js](vite.config.js)) | Only under `npm run dev` |
+| 2 | **Private GitHub gist** | A gist you own, synced over `api.github.com` | Opt-in, configured per browser via the cloud icon |
+| 3 | **`localStorage`** | Key `daily-dashboard:store` | The fallback everywhere else, and the write-through cache for tier 2 |
 
 Writes are debounced 200 ms; `beforeunload` flushes any pending save synchronously to `localStorage`
 and (when configured) fires a `keepalive` PATCH to the gist.
 
-Nothing is sent anywhere else: there is no analytics, no account system, and no server component
+**Nothing is sent anywhere else.** There is no analytics, no account system, and no server component
 beyond the optional gist you own.
 
-The dev file store and gist/localStorage on a deployed site are **separate buckets** and do not
-auto-sync.
+> [!IMPORTANT]
+> The dev file store and gist/`localStorage` on a deployed site are **separate buckets** and do not
+> auto-sync.
 
 ## Cross-device sync via Gist
 
 The deployed (static) app can sync state across browsers and devices using a private GitHub gist as
 the backend. Opt-in per browser, free, no extra infrastructure.
 
-### One-time setup
+<details>
+<summary><b>One-time setup</b></summary>
 
 1. Create a **private gist** at <https://gist.github.com> containing a single file named exactly `daily-dashboard.json` with contents `{}`.
 2. Copy the gist ID from the URL (`https://gist.github.com/<user>/<gist-id-here>`).
@@ -192,7 +247,10 @@ the backend. Opt-in per browser, free, no extra infrastructure.
 If the gist is empty on first save, the app uploads your current local state. Otherwise the gist is
 authoritative and replaces local state.
 
-### Behavior
+</details>
+
+<details>
+<summary><b>Behavior</b></summary>
 
 - **On load**: the gist content overwrites local state, then renders.
 - **On save**: writes go to `localStorage` synchronously, then PATCH the gist (debounced 200 ms).
@@ -200,28 +258,55 @@ authoritative and replaces local state.
 - **Manual refresh**: the sync dialog has a *Refresh* button to pull the latest gist (e.g. after editing on another device).
 - **Offline**: writes stay in `localStorage`; next successful PATCH pushes them up.
 
-### Where the PAT lives
+The dot on the cloud icon reflects sync state at a glance: muted = local-only, accent (pulsing) =
+syncing, green = synced, red = error.
+
+</details>
+
+<details>
+<summary><b>Where the token lives</b></summary>
 
 - Stored in `localStorage` under `daily-dashboard:gist` on the device where you entered it.
 - Sent only to `api.github.com` over TLS.
 - Scoped to the `gist` permission — worst-case leak gives access to your gists, not your repos.
 - Clearing browser site data (or clicking *Disable*) wipes the config.
 
-### Pip in the header
+</details>
 
-The dot on the cloud icon reflects sync state at a glance: muted = local-only, accent (pulsing) =
-syncing, green = synced, red = error.
+## Project structure
 
-## Deployment (GitHub Pages)
+```
+app/index.html      The app. Static markup; elements are addressed by fixed IDs.
+src/main.js         All application behavior, organized into flat sections.
+src/style.css       All styling. Themes are CSS custom properties on :root / [data-theme].
 
-Pushing to `main` triggers `.github/workflows/deploy.yml`, which builds and publishes to GitHub Pages.
+index.html          The landing page, served at the site root.
+src/landing.css     Landing-page styling. Mirrors the app's design tokens.
+src/landing.js      Landing-page theme toggle. Independent of the app's state.
 
-One-time setup on the GitHub repo: **Settings → Pages → Source = GitHub Actions**.
+vite.config.js      Vite config, PWA plugin, and the dev-only /api/store middleware.
+scripts/            Icon generation script.
+public/             Favicon, touch icon, generated PWA icons, landing screenshots.
+.github/workflows/  CI and GitHub Pages deployment.
+```
 
-The landing page is served at `https://<user>.github.io/<repo>/` and the app at
-`https://<user>.github.io/<repo>/app/`. The Vite config uses `base: './'`, so asset URLs are
-relative and the build works at any subpath.
+The build has two HTML entries: the landing page at the site root and the app under `/app/`.
 
+> [!TIP]
+> [CLAUDE.md](CLAUDE.md) documents the internal architecture — persistence tiers, the render/event
+> model, drag-and-drop, and the legacy-data migrations — in more depth than this README.
+
+## Deployment
+
+Pushing to `main` triggers [`deploy.yml`](.github/workflows/deploy.yml), which builds and publishes
+to GitHub Pages. One-time setup on the repo: **Settings → Pages → Source = GitHub Actions**.
+
+| URL | Serves |
+| --- | --- |
+| `https://<user>.github.io/<repo>/` | The landing page |
+| `https://<user>.github.io/<repo>/app/` | The app |
+
+The Vite config uses `base: './'`, so asset URLs are relative and the build works at any subpath.
 Because the build is a static bundle with no server requirement, it also deploys unchanged to
 Netlify, Vercel, Cloudflare Pages, or any static host.
 
@@ -235,16 +320,21 @@ commit-message expectations, the manual-verification checklist to run before ope
 and the architecture constraints new code should stay compatible with (vanilla JS, no framework, no
 new runtime dependencies).
 
-- 🐛 [Report a bug](https://github.com/jihadabuzuhri/daily-dashboard/issues/new?template=bug_report.yml)
-- 💡 [Suggest a feature](https://github.com/jihadabuzuhri/daily-dashboard/issues/new?template=feature_request.yml)
-- 🤝 [Code of Conduct](CODE_OF_CONDUCT.md)
-- 🔒 [Security policy](SECURITY.md) — please report vulnerabilities privately, not as public issues
+| | |
+| --- | --- |
+| 🐛 | [Report a bug](https://github.com/jihadabuzuhri/daily-dashboard/issues/new?template=bug_report.yml) |
+| 💡 | [Suggest a feature](https://github.com/jihadabuzuhri/daily-dashboard/issues/new?template=feature_request.yml) |
+| 🤝 | [Code of Conduct](CODE_OF_CONDUCT.md) |
+| 🔒 | [Security policy](SECURITY.md) — please report vulnerabilities privately, not as public issues |
 
 For anything larger than a small fix, please open an issue to discuss the approach before writing
-code.
-
-Pull requests are built against Node 20 and 22 by [the CI workflow](.github/workflows/ci.yml).
+code. Pull requests are built against Node 20 and 22 by [the CI workflow](.github/workflows/ci.yml).
 
 ## License
 
-Licensed under the MIT License. See [LICENSE](LICENSE) for the full text.
+Licensed under the [MIT License](LICENSE).
+
+<div align="center">
+<br>
+<sub>Built with vanilla JS and Vite.</sub>
+</div>
