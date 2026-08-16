@@ -52,7 +52,8 @@ Start the development server (Vite, with hot module replacement):
 npm run dev
 ```
 
-The app is served at <http://localhost:5173>.
+The app is served at <http://localhost:5173/app/>; the landing page is at
+<http://localhost:5173>.
 
 ### Other useful scripts
 
@@ -70,14 +71,21 @@ browser is the expected way to validate a change**. See
 ## Project layout
 
 ```
-index.html          Static markup. Elements are addressed by fixed IDs.
+app/index.html      The app. Static markup; elements are addressed by fixed IDs.
 src/main.js         All application behavior, organized into flat sections.
 src/style.css       All styling. Themes are CSS custom properties on :root / [data-theme].
+index.html          The landing page, served at the site root.
+src/landing.css     Landing-page styling. Mirrors the app's design tokens.
+src/landing.js      Landing-page theme toggle. Independent of the app's state.
 vite.config.js      Vite config, PWA plugin, and the dev-only /api/store middleware.
 scripts/            Icon generation script.
-public/             Favicon, touch icon, generated PWA icons.
+public/             Favicon, touch icon, generated PWA icons, landing screenshots.
 .github/workflows/  GitHub Pages deployment.
 ```
+
+The build has two HTML entries. Changes to the app go in `app/index.html`, `src/main.js`, and
+`src/style.css`; the landing page is self-contained in `index.html`, `src/landing.css`, and
+`src/landing.js`, and must never read or write the app's stored state.
 
 ## Architecture guidelines
 
@@ -89,7 +97,7 @@ before a non-trivial change. The essentials:
   `vite.config.js`. Please don't introduce React/Vue/Svelte, a CSS framework, or a state library.
 - **No new runtime dependencies** unless there's a clear reason a small amount of local code can't
   do the job. Open an issue to discuss first.
-- **Markup lives in `index.html`; behavior queries it by ID.** `src/main.js` does not render page
+- **Markup lives in `app/index.html`; behavior queries it by ID.** `src/main.js` does not render page
   structure, so renaming an ID means editing both files.
 - **Full-list re-render on change.** Lists are rebuilt (`innerHTML = ''` then rebuild) on every
   change. Don't add a diffing or virtual-DOM layer.
