@@ -26,3 +26,6 @@ data/*.tmp
 *.njsproj
 *.sln
 *.sw?
+
+# Wrangler (Cloudflare) local state
+.wrangler

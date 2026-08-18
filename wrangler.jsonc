@@ -1,0 +1,9 @@
+{
+  // Static-assets-only Worker: no server code, just the built `dist/` output.
+  // `npm run build` produces dist/ (landing page at /, the app at /app/).
+  "name": "daily-dashboard",
+  "compatibility_date": "2026-08-18",
+  "assets": {
+    "directory": "./dist"
+  }
+}
